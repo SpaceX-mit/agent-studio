@@ -1,0 +1,126 @@
+.chat-layout {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  container-type: inline-size;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.chat-layout .welcome {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 24px 24px 32px;
+}
+.chat-layout .welcome::before { content: ""; flex: 7 0 0px; }
+.chat-layout .welcome::after { content: ""; flex: 3 0 0px; }
+.welcome-content { width: 100%; max-width: 600px; margin: 0 auto; flex-shrink: 0; }
+.welcome-mark { position: relative; width: 44px; height: 44px; margin: 0 auto 28px; color: #b9babc; }
+.welcome-mark svg { position: absolute; stroke-width: 1.5; }
+.welcome-badge { inset: 0; width: 44px; height: 44px; }
+.welcome-terminal { inset: 11px; width: 22px; height: 22px; }
+.welcome-mark:focus-visible { outline: 2px solid #73777c; outline-offset: 4px; border-radius: 8px; }
+.chat-layout .welcome h1 { font-size: 24px; font-weight: 400; line-height: 1.5; margin: 0 0 32px; color: #252729; overflow-wrap: anywhere; }
+.welcome h1 span { text-decoration: underline dotted #bfc1c3; text-underline-offset: 5px; text-decoration-thickness: 1px; }
+.chat-layout .cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.chat-layout .cards button {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  height: 96px;
+  padding: 12px 14px;
+  border: 1px solid #e7e8e9;
+  border-radius: 8px;
+  box-shadow: 0 2px 3px #00000005;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+  color: #292b2d;
+}
+.chat-layout .cards button:hover { background: #fafbfc; border-color: #cfd2d5; }
+.chat-layout button:focus-visible { outline: 2px solid #73777c; outline-offset: 2px; }
+.suggestion-icon { width: 16px; height: 16px; flex-shrink: 0; stroke-width: 1.7; }
+.suggestion-icon.explore { color: #318ffa; }
+.suggestion-icon.build { color: #965afa; }
+.suggestion-icon.review { color: #00a65a; }
+.suggestion-icon.fix { color: #e65d27; }
+
+.composer-dock { position: relative; flex-shrink: 0; width: min(624px, calc(100% - 32px)); margin: 0 auto 8px; }
+.project-strip { position: relative; display: flex; align-items: center; gap: 24px; min-height: 38px; padding: 4px 14px; margin: 0 12px; background: #f4f4f5; border-radius: 12px 12px 0 0; color: #353739; font-size: 12px; }
+.project-strip svg, .composer-footer svg { width: 16px; height: 16px; flex-shrink: 0; stroke-width: 1.7; }
+.project-strip .project, .project-context { display: flex; align-items: center; gap: 8px; color: inherit; min-width: 0; }
+.project-strip .project { height: 30px; padding: 0; max-width: 55%; }
+.project-strip .project:hover { color: #000; }
+.project-strip .project span, .project-branch span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.project-context { flex-shrink: 0; white-space: nowrap; }
+.project-branch { flex-shrink: 1; }
+.project-strip .project-menu { left: 0; bottom: calc(100% + 6px); max-width: 100%; }
+.project-strip .project-menu button { overflow-wrap: anywhere; }
+.chat-layout .composer { width: 100%; margin: 0; padding: 10px 12px 8px; border: 1px solid #e6e7e8; border-radius: 16px; box-shadow: 0 4px 18px #00000006; }
+.chat-layout .composer textarea { display: block; height: 56px; padding: 4px 0; font-size: 14px; line-height: 22px; background: transparent; color: inherit; }
+.chat-layout .composer textarea::placeholder { color: #b9bdc1; }
+.chat-layout .composer-footer { height: auto; min-height: 30px; gap: 12px; }
+.chat-layout .composer-left, .chat-layout .composer-right { min-width: 0; gap: 12px; }
+.chat-layout .composer-right { margin-left: auto; }
+.chat-layout .icon-button { display: grid; place-items: center; width: 24px; height: 28px; padding: 0; border-radius: 4px; color: #454749; }
+.chat-layout .icon-button:hover { background: #f0f1f2; }
+.permission-status { display: flex; align-items: center; gap: 6px; white-space: nowrap; color: #c86027; }
+.connection-status { display: inline-flex; align-items: center; }
+.chat-layout .model-button { max-width: 180px; min-height: 28px; }
+.chat-layout .send { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; padding: 0; }
+.chat-layout .send:disabled { opacity: .55; cursor: default; }
+.chat-layout .send svg { width: 18px; height: 18px; }
+.chat-layout .attachment-list { max-height: 64px; overflow-y: auto; margin: 0 0 6px; }
+.chat-layout .attachment-list span { max-width: 100%; overflow-wrap: anywhere; }
+.chat-layout .thread-view { padding-bottom: 32px; }
+
+.dark .chat-layout .welcome h1, .dark .chat-layout .cards button { color: #e7e9eb; }
+.dark .chat-layout .cards button { border-color: #45484b; }
+.dark .chat-layout .cards button:hover { background: #383b3e; border-color: #60656b; }
+.dark .project-strip { background: #37393b; color: #d4d7da; }
+.dark .project-strip .project:hover { color: #fff; }
+.dark .chat-layout .composer { border-color: #45484b; }
+.dark .chat-layout .icon-button { color: #c1c6ca; }
+.dark .chat-layout .icon-button:hover { background: #424649; }
+.dark .permission-status { color: #eda66a; }
+
+@container (max-width: 680px) {
+  .chat-layout .welcome { padding: 24px 20px; }
+  .chat-layout .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .project-strip { gap: 14px; }
+}
+@container (max-width: 380px) {
+  .chat-layout .welcome { padding: 24px 16px; }
+  .chat-layout .cards button { padding: 12px; height: 128px; }
+  .chat-layout .composer-footer { flex-wrap: wrap; gap: 4px; }
+  .chat-layout .composer-left { flex-basis: 100%; }
+  .project-strip { flex-wrap: wrap; column-gap: 12px; row-gap: 0; }
+  .project-strip .project { max-width: 100%; }
+}
+@media (max-height: 640px) {
+  .chat-layout .welcome { padding-top: 24px; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .welcome-mark:is(:hover, :focus-visible) .welcome-badge { animation: mark-turn 800ms ease-in-out; }
+  .welcome-mark:is(:hover, :focus-visible) .welcome-terminal { animation: terminal-pulse 800ms ease-in-out; }
+  .cards button:is(:hover, :focus-visible) .explore { animation: icon-look 700ms ease-in-out; }
+  .cards button:is(:hover, :focus-visible) .build { animation: icon-tap 650ms ease-in-out; transform-origin: 75% 75%; }
+  .cards button:is(:hover, :focus-visible) .review { animation: icon-turn 800ms ease-in-out; }
+  .cards button:is(:hover, :focus-visible) .fix { animation: icon-wiggle 650ms ease-in-out; }
+}
+@keyframes mark-turn { 0%, 100% { transform: rotate(0); } 40% { transform: rotate(18deg); } 70% { transform: rotate(-8deg); } }
+@keyframes terminal-pulse { 0%, 100% { opacity: 1; transform: translateY(0); } 40% { opacity: .4; transform: translateY(-2px); } 70% { opacity: 1; transform: translateY(1px); } }
+@keyframes icon-look { 0%, 100% { transform: rotate(0); } 35% { transform: rotate(-18deg); } 70% { transform: rotate(12deg); } }
+@keyframes icon-tap { 0%, 100% { transform: rotate(0); } 30%, 65% { transform: rotate(-28deg); } 45%, 80% { transform: rotate(12deg); } }
+@keyframes icon-turn { to { transform: rotate(360deg); } }
+@keyframes icon-wiggle { 0%, 100% { transform: translateX(0); } 25%, 65% { transform: translateX(-2px) rotate(-8deg); } 45%, 80% { transform: translateX(2px) rotate(8deg); } }

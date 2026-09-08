@@ -26,6 +26,7 @@ export interface Thread {
   id: string;
   remoteId?: string;
   title: string;
+  titleSource?: 'auto' | 'manual';
   projectId?: string;
   status: ThreadStatus;
   pinned: boolean;
@@ -53,6 +54,7 @@ export interface Automation {
 }
 
 export interface DesktopState {
+  mode: 'code' | 'work';
   activeThreadId?: string;
   activeProjectId?: string;
   theme: 'light' | 'dark';

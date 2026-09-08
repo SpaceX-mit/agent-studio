@@ -1,0 +1,229 @@
+.desktop-body aside.sidebar {
+  --sidebar-bg: #f7f7f7;
+  --sidebar-text: #454749;
+  --sidebar-muted: #909294;
+  --sidebar-hover: #eeeeef;
+  --sidebar-selected: #e6e7e8;
+  --sidebar-selected-hover: #dfe0e1;
+  --sidebar-focus: #73777c;
+  display: flex;
+  flex: 0 0 298px;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  padding: 8px;
+  background: var(--sidebar-bg);
+  border-color: #e5e5e5;
+  color: var(--sidebar-text);
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  letter-spacing: 0;
+}
+
+.sidebar .brand-row {
+  flex-shrink: 0;
+  height: 32px;
+  margin: 0 6px 12px;
+}
+
+.sidebar .brand {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.sidebar .mode-picker { position: relative; }
+.sidebar .mode-trigger { display: flex; align-items: center; gap: 5px; height: 32px; padding: 0 6px; margin-left: -6px; }
+.sidebar .mode-trigger[aria-expanded="true"] { background: var(--sidebar-selected); }
+.sidebar .mode-trigger svg { width: 14px; height: 14px; color: var(--sidebar-muted); }
+.sidebar .mode-menu { position: absolute; top: calc(100% + 6px); left: -6px; z-index: 12; width: 232px; max-width: calc(100vw - 32px); padding: 6px; border: 1px solid #dedfe1; border-radius: 8px; background: #fff; color: var(--sidebar-text); box-shadow: 0 8px 24px #00000012; }
+.sidebar .mode-menu button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; height: 42px; padding: 0 10px; font-size: 14px; }
+.dark .sidebar .mode-menu { background: #303234; border-color: #4b4e52; }
+
+.sidebar svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  stroke-width: 1.6;
+}
+
+.desktop-body .sidebar button {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 100ms ease;
+}
+
+.sidebar .sidebar-search-toggle {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--sidebar-muted);
+}
+
+.desktop-body .sidebar .sidebar-nav,
+.sidebar .sidebar-project {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+}
+
+.sidebar .sidebar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #dedfe0 transparent;
+  scrollbar-gutter: stable;
+  margin: 8px -4px 0;
+  padding: 0 4px 8px;
+}
+
+.sidebar .section {
+  margin: 18px 8px 6px;
+  color: var(--sidebar-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.sidebar .empty {
+  padding: 4px 8px;
+  color: var(--sidebar-muted);
+  font-size: 12px;
+}
+
+.sidebar .recent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  margin: 0;
+  font-weight: 400;
+}
+
+.sidebar .recent span,
+.sidebar .sidebar-project span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar .thread-pin {
+  width: 13px;
+  height: 13px;
+  margin-left: auto;
+  color: var(--sidebar-muted);
+}
+
+.sidebar .recent .thread-title-viewport { flex: 1; min-width: 0; overflow: hidden; }
+.sidebar .recent .thread-title-text { display: inline-block; width: max-content; max-width: none; overflow: visible; vertical-align: top; }
+.global-thread-toolbar { gap: 12px; }
+.global-thread-toolbar > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.global-thread-toolbar > div { flex-shrink: 0; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .sidebar .recent[data-overflow="true"]:is(:hover, :focus-visible) .thread-title-viewport { text-overflow: clip; }
+  .sidebar .recent[data-overflow="true"]:is(:hover, :focus-visible) .thread-title-text {
+    animation: thread-title-scroll var(--title-duration) linear 600ms infinite alternate;
+  }
+}
+@keyframes thread-title-scroll {
+  0%, 10% { transform: translateX(0); }
+  90%, 100% { transform: translateX(var(--title-travel)); }
+}
+
+.desktop-body .sidebar button:hover {
+  background: var(--sidebar-hover);
+  color: var(--sidebar-text);
+}
+
+.desktop-body .sidebar button[aria-current="page"] {
+  background: var(--sidebar-selected);
+  color: var(--sidebar-text);
+}
+
+.desktop-body .sidebar button[aria-current="page"]:hover {
+  background: var(--sidebar-selected-hover);
+}
+
+.desktop-body .sidebar button:focus-visible,
+.sidebar .side-search:focus-visible {
+  outline: 2px solid var(--sidebar-focus);
+  outline-offset: -2px;
+}
+
+.sidebar .side-search {
+  flex-shrink: 0;
+  width: calc(100% - 12px);
+  height: 32px;
+  margin: 0 6px 8px;
+  padding: 4px 8px;
+  border: 1px solid #d9dadd;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+}
+
+.desktop-body aside.sidebar[hidden] { display: none; }
+
+.desktop-titlebar { font-size: 13px; gap: 14px; padding: 0 8px; }
+.titlebar-navigation { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.desktop-titlebar .titlebar-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  color: #85888b;
+}
+.titlebar-icon svg { width: 16px; height: 16px; stroke-width: 1.6; }
+.desktop-titlebar .titlebar-icon:hover:not(:disabled) { background: #e8e9ea; color: #454749; }
+.desktop-titlebar .titlebar-icon:disabled { color: #c7c9cb; cursor: default; }
+.desktop-titlebar .titlebar-icon:focus-visible { outline: 2px solid #73777c; outline-offset: -2px; }
+.dark .desktop-titlebar .titlebar-icon { color: #a8adb2; }
+.dark .desktop-titlebar .titlebar-icon:disabled { color: #565b60; }
+.dark .desktop-titlebar .titlebar-icon:hover:not(:disabled) { background: #3d4043; color: #dadcde; }
+
+.dark .desktop-body aside.sidebar {
+  --sidebar-bg: #272829;
+  --sidebar-text: #dadcde;
+  --sidebar-muted: #92969a;
+  --sidebar-hover: #323436;
+  --sidebar-selected: #3d4043;
+  --sidebar-selected-hover: #46494c;
+  --sidebar-focus: #a5abb1;
+  border-color: #3b3e40;
+}
+
+.dark .sidebar .sidebar-scroll { scrollbar-color: #484c50 transparent; }
+.dark .sidebar .side-search { border-color: #4b4e52; }
+
+@media (max-width: 900px) {
+  .desktop-body aside.sidebar { flex-basis: 240px; width: 240px; }
+}
+
+@media (max-width: 640px) {
+  .desktop-body aside.sidebar { flex-basis: 200px; width: 200px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop-body .sidebar button { transition: none; }
+}
