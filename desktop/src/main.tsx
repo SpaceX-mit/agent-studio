@@ -1,0 +1,271 @@
+import { Fragment, StrictMode, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { appendMessage, createThread, loadState, saveState } from './store';
+import type { DesktopState } from './domain';
+import { failureMessage, recordTurnFailure } from './turnFailure';
+import { ModelPicker, useModelCatalog } from './ModelPicker';
+import { applyToolEvent, finishTools, restoreMessages } from './toolActivity';
+import { ToolActivityGroup, groupMessages } from './ToolActivityView';
+import { MessageActions } from './ReplyActions';
+import { branchSnapshot, isFinalReply, replyText } from './messageActions';
+import { archiveThread, connectCodex, deleteThread, forkThread, interruptTurn, listThreadItems, listThreadTurns, listThreads, resumeThread, setThreadName, startThread, startTurn, subscribeCodex } from './codexClient';
+import { ExtensionsPage } from './ExtensionsPage';
+import './styles.css';
+
+type Page = 'chat' | 'pulls' | 'scheduled' | 'plugins' | 'settings';
+
+function App() {
+  const [state, setState] = useState<DesktopState>(() => { const loaded = loadState(); loaded.model = modelId(loaded.model); return loaded; });
+  const [input, setInput] = useState('');
+  const [page, setPage] = useState<Page>('chat');
+  const [search, setSearch] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+  const [showModel, setShowModel] = useState(false);
+  const [showProjects, setShowProjects] = useState(false);
+  const [attachments, setAttachments] = useState<string[]>(() => JSON.parse(localStorage.getItem('codex-attachments') ?? '[]'));
+  const [notice, setNotice] = useState('');
+  const [codexStatus, setCodexStatus] = useState<'connecting' | 'connected' | 'offline' | 'error'>('connecting');
+  const [remoteThreadId, setRemoteThreadId] = useState<string>();
+  const [runningTurnId, setRunningTurnId] = useState<string>();
+  const [approval, setApproval] = useState<any>();
+  const [activity, setActivity] = useState<string>();
+  const [providerStatus, setProviderStatus] = useState<any>();
+  const catalog = useModelCatalog();
+  const availableModels = catalog.models;
+  useEffect(() => {
+    if (!catalog.loading && availableModels.length) setState(current => availableModels.includes(current.model) ? current : { ...current, model: availableModels[0] });
+  }, [availableModels, catalog.loading]);
+  const activeThreadRef = useRef<string | undefined>(undefined);
+  const sendingRef = useRef(false);
+  const forkingRef = useRef(false);
+  const completedTurns = useRef(new Set<string>());
+  activeThreadRef.current = state.activeThreadId;
+  const active = state.threads.find(thread => thread.id === state.activeThreadId);
+  const threads = useMemo(() => state.threads.filter(thread => !thread.archived && thread.title.toLowerCase().includes(search.toLowerCase())).slice().reverse(), [state.threads, search]);
+  useEffect(() => { saveState(state); document.documentElement.dataset.theme = state.theme; }, [state]);
+  useEffect(() => {
+    window.desktop?.providerStatus?.().then((provider: any) => {
+      setProviderStatus(provider);
+      if (!provider?.keyConfigured) setNotice(failureMessage('MINIMAX_API_KEY'));
+    }).catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    const cleanup = subscribeCodex({
+      notification: message => {
+        const params = message.params || {};
+        if (message.method === 'item/agentMessage/delta' && params.delta) {
+          update(next => { const thread = next.threads.find(item => params.threadId ? item.remoteId === params.threadId : item.id === activeThreadRef.current); if (!thread) return; const last = thread.messages.find(message => message.id === `live-${params.itemId}`); if (last?.role === 'assistant') last.content += params.delta; else thread.messages.push({ id: `live-${params.itemId}`, role: 'assistant', turnId: params.turnId, content: params.delta, createdAt: new Date().toISOString() }); thread.status = 'running'; });
+        }
+        if (message.method && ['item/started', 'item/completed', 'item/commandExecution/outputDelta', 'item/fileChange/outputDelta', 'item/fileChange/patchUpdated'].includes(message.method)) {
+          update(next => {
+            const thread = next.threads.find(item => item.remoteId === params.threadId);
+            if (thread) applyToolEvent(thread, message.method!, params);
+          });
+        }
+        if (message.method === 'error') {
+          if (params.willRetry) setActivity('服务暂时不可用，正在重试…');
+          else update(next => {
+            const thread = next.threads.find(item => item.remoteId === params.threadId);
+            if (thread) recordTurnFailure(thread, params.turnId, params.error);
+          });
+        }
+        if (message.method === 'turn/completed') {
+          completedTurns.current.add(params.turn?.id);
+          setRunningTurnId(undefined); setActivity(undefined);
+          update(next => {
+            const thread = next.threads.find(item => params.threadId ? item.remoteId === params.threadId : item.id === activeThreadRef.current);
+            if (!thread) return;
+            finishTools(thread, params.turn?.id, params.turn?.status === 'failed');
+            if (params.turn?.error || params.turn?.status === 'failed') recordTurnFailure(thread, params.turn?.id, params.turn?.error);
+            else thread.status = 'completed';
+          });
+        }
+      },
+      serverRequest: message => setApproval(message),
+      error: error => { setCodexStatus('error'); setNotice(`Codex 通信错误：${error?.message || '未知错误'}`); },
+      stderr: text => {
+        for (const line of String(text || '').split('\n').filter(Boolean)) {
+          try { const log = JSON.parse(line); if (log.level === 'ERROR') setNotice(failureMessage(log.fields?.message)); }
+          catch { if (/MINIMAX_API_KEY/.test(line)) setNotice(failureMessage(line)); }
+        }
+      },
+      closed: () => setCodexStatus('offline')
+    });
+    (async () => {
+      let lastError: any;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try { await connectCodex(); setCodexStatus('connected'); try { const listed = await listThreads(); const remote = listed?.data || listed?.threads || []; update(next => { for (const item of remote) { if (next.threads.some(local => local.remoteId === item.id)) continue; next.threads.push({ id: `remote-${item.id}`, remoteId: item.id, title: item.name || item.preview || 'Codex 对话', status: item.status?.type === 'active' ? 'running' : 'completed', pinned: false, archived: false, messages: [], updatedAt: new Date((item.updatedAt || 0) * 1000).toISOString() }); } }); } catch { /* optional history */ } return; } catch (error) { lastError = error; await new Promise(resolve => setTimeout(resolve, 350 * (attempt + 1))); }
+      }
+      setCodexStatus('offline'); setNotice(`app-server 连接失败：${lastError?.message || '未知错误'}${providerStatus?.keyConfigured === false ? '；请在启动该副本的 PowerShell 进程设置 MINIMAX_API_KEY' : ''}`);
+    })();
+    return cleanup;
+  }, []);
+  const toast = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 1500); };
+  const update = (fn: (next: DesktopState) => void) => setState(previous => { const next = structuredClone(previous); fn(next); return next; });
+  const send = async () => {
+    const text = input.trim(); if (!text || runningTurnId || sendingRef.current) return;
+    if (catalog.loading || !availableModels.includes(state.model)) { setNotice(catalog.error || '请等待模型列表加载并选择模型。'); setShowModel(true); return; }
+    if (codexStatus !== 'connected') { setNotice('app-server 尚未连接，请稍后重试。'); return; }
+    sendingRef.current = true;
+    try {
+      const provider = await window.desktop?.providerStatus?.();
+      setProviderStatus(provider);
+      if (!provider?.keyConfigured) { setNotice(failureMessage('MINIMAX_API_KEY')); sendingRef.current = false; return; }
+    } catch { setNotice('无法读取模型配置，请重新启动项目副本。'); sendingRef.current = false; return; }
+    let localId = state.activeThreadId;
+    const existing = state.threads.find(item => item.id === localId);
+    if (!existing) { const draft = structuredClone(state); const created = createThread(draft, text.slice(0, 28)); localId = created.id; update(next => { next.threads.push(created); next.activeThreadId = created.id; }); }
+    update(next => { const thread = next.threads.find(item => item.id === localId); if (thread) { appendMessage(next, thread.id, 'user', text); thread.status = 'running'; } });
+    setInput(''); setPage('chat');
+    try {
+      const model = modelId(state.model); const modelProvider = 'minimax'; const cwd = await window.desktop?.getProjectRoot?.();
+      const local = state.threads.find(item => item.id === localId);
+      let threadId = remoteThreadId || local?.remoteId;
+      const createRemoteThread = async () => {
+        const started = await startThread({ effort: effortForModel(state.model), model, modelProvider, cwd });
+        const id = started.thread?.id;
+        if (!id) throw new Error('没有返回 thread id');
+        setRemoteThreadId(id);
+        update(next => { const thread = next.threads.find(item => item.id === localId); if (thread) thread.remoteId = id; });
+        return id;
+      };
+      if (!threadId) threadId = await createRemoteThread();
+      if (!threadId) throw new Error('没有返回 thread id');
+      let turn;
+      try { turn = await startTurn({ threadId, text, model, modelProvider, effort: effortForModel(state.model), cwd }); }
+      catch (error: any) {
+        const message = String(error?.message || error);
+        if (!/thread\s+not\s+found|unknown\s+thread|no\s+such\s+thread/i.test(message)) throw error;
+        threadId = await createRemoteThread();
+        if (!threadId) throw new Error('没有返回 thread id');
+        turn = await startTurn({ threadId, text, model, modelProvider, effort: effortForModel(state.model), cwd });
+      }
+      if (!completedTurns.current.has(turn.turn?.id)) setRunningTurnId(turn.turn?.id);
+    } catch (error: any) {
+      update(next => { const thread = next.threads.find(item => item.id === localId); if (thread) recordTurnFailure(thread, crypto.randomUUID(), error); });
+    } finally { sendingRef.current = false; }
+  };
+  const cancel = () => { const activeRemoteId = state.threads.find(item => item.id === activeThreadRef.current)?.remoteId || remoteThreadId; if (activeRemoteId && runningTurnId) interruptTurn(activeRemoteId, runningTurnId).catch(() => undefined); };
+  const newChat = () => { setRemoteThreadId(undefined); update(next => createThread(next)); setInput(''); setPage('chat'); };
+  const selectThread = async (thread: DesktopState['threads'][number]) => { update(next => { next.activeThreadId = thread.id; }); setRemoteThreadId(thread.remoteId); setPage('chat'); if (thread.remoteId && codexStatus === 'connected') { try { let items: any[] = []; try { let cursor: string | undefined; do { const page = await listThreadItems(thread.remoteId, cursor); items.push(...(page?.data || page?.items || [])); cursor = page?.nextCursor || undefined; } while (cursor); } catch { const loaded = await resumeThread(thread.remoteId); items = loaded?.thread?.turns?.flatMap((turn: any) => turn.items || []) || []; } update(next => { const local = next.threads.find(item => item.id === thread.id); if (!local) return; if (local.status !== 'running') local.messages = restoreMessages(items, local.messages); }); } catch (error: any) { toast(`恢复线程失败：${error.message}`); } } };
+  const respondApproval = async (decision: string) => {
+    if (!approval) return;
+    let result: any = { decision };
+    if (approval.method === 'item/permissions/requestApproval') {
+      result = decision === 'accept' ? { scope: 'turn', permissions: approval.params?.permissions || {} } : { scope: 'turn', permissions: {} };
+    } else if (approval.method === 'item/tool/requestUserInput') {
+      result = { answers: Object.fromEntries((approval.params?.questions || []).map((question: any) => [question.id, []])) };
+    } else if (approval.method === 'mcpServer/elicitation/request') {
+      result = { action: decision === 'accept' ? 'accept' : decision === 'cancel' ? 'cancel' : 'decline', content: null };
+    }
+    await window.codex?.respond(approval.id, result);
+    setApproval(undefined);
+  };
+  const renameActive = async () => { const thread = state.threads.find(item => item.id === state.activeThreadId); if (!thread) return; const name = window.prompt('重命名会话', thread.title)?.trim(); if (!name || name === thread.title) return; if (thread.remoteId && codexStatus === 'connected') { try { await setThreadName(thread.remoteId, name); } catch (error: any) { toast(`重命名失败：${error.message}`); return; } } update(next => { const item = next.threads.find(value => value.id === thread.id); if (item) item.title = name; }); };
+  const archiveActive = async () => { const thread = state.threads.find(item => item.id === state.activeThreadId); if (!thread) return; if (thread.remoteId && codexStatus === 'connected') { try { await archiveThread(thread.remoteId); } catch (error: any) { toast(`归档失败：${error.message}`); return; } } update(next => { const item = next.threads.find(value => value.id === thread.id); if (item) { item.archived = true; item.status = 'completed'; } }); setRemoteThreadId(undefined); };
+  const deleteActive = async () => { const thread = state.threads.find(item => item.id === state.activeThreadId); if (!thread || !window.confirm('删除这个会话？此操作不可撤销。')) return; if (thread.remoteId && codexStatus === 'connected') { try { await deleteThread(thread.remoteId); } catch (error: any) { toast(`删除失败：${error.message}`); return; } } update(next => { next.threads = next.threads.filter(value => value.id !== thread.id); next.activeThreadId = undefined; }); setRemoteThreadId(undefined); };
+  const forkActive = async () => { const thread = state.threads.find(item => item.id === state.activeThreadId); if (!thread?.remoteId || codexStatus !== 'connected') { toast('当前会话还没有远端线程'); return; } try { const result = await forkThread(thread.remoteId); const remote = result?.thread; if (!remote?.id) throw new Error('没有返回分叉线程'); const copy = { ...thread, id: `remote-${remote.id}`, remoteId: remote.id, title: `${thread.title} · 分支`, messages: structuredClone(thread.messages), updatedAt: new Date().toISOString() }; update(next => { next.threads.push(copy); next.activeThreadId = copy.id; }); setRemoteThreadId(remote.id); toast('已创建会话分支'); } catch (error: any) { toast(`分叉失败：${error.message}`); } };
+  const forkFromMessage = async (messageId: string) => {
+    const source = state.threads.find(thread => thread.id === state.activeThreadId);
+    if (forkingRef.current) return;
+    if (!source?.remoteId || codexStatus !== 'connected') throw new Error('会话尚未连接。');
+    if (source.status === 'running' || runningTurnId) throw new Error('请等待本轮回复完成。');
+    const message = source.messages.find(item => item.id === messageId);
+    if (!message) throw new Error('找不到这条回复。');
+    forkingRef.current = true;
+    try {
+      let turnId = message.turnId;
+      if (!turnId) {
+        let cursor: string | undefined;
+        do {
+          const result = await listThreadTurns(source.remoteId, cursor);
+          const turn = (result.data || []).find((entry: any) => (entry.items || []).some((item: any) => `live-${item.id}` === messageId || item.id === messageId));
+          if (turn) { turnId = turn.id; break; }
+          cursor = result.nextCursor || undefined;
+        } while (cursor);
+      }
+      if (!turnId) throw new Error('无法定位回复所在的回合，请重新加载该会话后重试。');
+      const result = await forkThread(source.remoteId, turnId);
+      if (!result.thread?.id) throw new Error('服务未返回分支会话。');
+      const copy = branchSnapshot(source, messageId, result.thread.id);
+      update(next => { next.threads.push(copy); next.activeThreadId = copy.id; });
+      setRemoteThreadId(copy.remoteId); setInput(''); setPage('chat');
+    } finally { forkingRef.current = false; }
+  };
+  const addAttachment = () => { const next = attachments.includes('workspace-context.md') ? attachments : [...attachments, 'workspace-context.md']; setAttachments(next); localStorage.setItem('codex-attachments', JSON.stringify(next)); toast('已添加附件（演示）'); };
+  return <div className={`desktop-app ${state.theme}`}>
+    <header className="desktop-titlebar"><button>◫</button><span>Codex</span><nav><button>文件</button><button>编辑</button><button>视图</button><button>帮助</button></nav><div className="window-controls"><button onClick={() => window.desktop?.minimize?.()}>−</button><button onClick={() => window.desktop?.toggleMaximize()}>□</button><button onClick={() => window.desktop?.close?.()}>×</button></div></header>
+    <div className="desktop-body"><aside><div className="brand-row"><button className="brand">Codex⌄</button><button aria-label="搜索" onClick={() => setShowSearch(value => !value)}>⌕</button></div>{showSearch && <input autoFocus className="side-search" placeholder="搜索最近会话" value={search} onChange={event => setSearch(event.target.value)} />}<button className={page === 'chat' ? 'active' : ''} onClick={newChat}>✎ 新对话</button><button className={page === 'pulls' ? 'active' : ''} onClick={() => setPage('pulls')}>⑂ Pull Request</button><button className={page === 'scheduled' ? 'active' : ''} onClick={() => setPage('scheduled')}>◷ 已安排</button><button className={page === 'plugins' ? 'active' : ''} onClick={() => setPage('plugins')}>◎ 插件</button><div className="section">项目</div><div className="empty">{state.activeProjectId ?? '没有项目'}</div><div className="section">最近</div>{threads.map(thread => <button className="recent" key={thread.id} onClick={() => selectThread(thread)}>{thread.pinned ? '★ ' : ''}{thread.title}</button>)}</aside>
+      <main>{active && page === 'chat' && <div className="thread-toolbar global-thread-toolbar"><span>{active.title}</span><div><button onClick={renameActive}>重命名</button><button onClick={forkActive}>分叉</button><button onClick={archiveActive}>归档</button><button onClick={deleteActive}>删除</button></div></div>}{page === 'chat' ? <Chat active={active} input={input} setInput={setInput} send={send} cancel={cancel} running={Boolean(runningTurnId)} activity={activity} model={state.model} models={availableModels} catalog={catalog} update={update} attachments={attachments} addAttachment={addAttachment} showModel={showModel} setShowModel={setShowModel} showProjects={showProjects} setShowProjects={setShowProjects} toast={toast} project={state.activeProjectId} status={codexStatus} onRename={renameActive} onArchive={archiveActive} onDelete={deleteActive} onFork={forkActive} onForkMessage={forkFromMessage} /> : page === 'plugins' ? <ExtensionsPage connected={codexStatus === 'connected'} /> : <Workspace page={page} state={state} models={availableModels} update={update} toast={toast} providerStatus={providerStatus} />}</main>
+    </div>{notice && <div className="toast">{notice}</div>}{approval && <ApprovalDialog request={approval} onDecision={respondApproval} />}
+  </div>;
+}
+
+function effortForModel(model: string) { return model.includes('低') ? 'low' : model.includes('中') ? 'medium' : 'high'; }
+function modelId(model: string) { return model.split(' · ')[0]; }
+
+function cleanAssistantText(value: string) { return replyText(value); }
+
+function inlineMarkdown(value: string) {
+  const parts = value.split(/(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith('`') && part.endsWith('`')) return <code key={index}>{part.slice(1, -1)}</code>;
+    if ((part.startsWith('**') && part.endsWith('**')) || (part.startsWith('__') && part.endsWith('__'))) return <strong key={index}>{part.slice(2, -2)}</strong>;
+    return <Fragment key={index}>{part}</Fragment>;
+  });
+}
+
+function MarkdownMessage({ content }: { content: string }) {
+  const text = cleanAssistantText(content);
+  const lines = text.split(/\r?\n/);
+  const blocks: ReactNode[] = [];
+  let paragraph: string[] = [];
+  let code: string[] | null = null;
+  let language = '';
+  const flushParagraph = () => { if (paragraph.length) { blocks.push(<p key={`p-${blocks.length}`}>{inlineMarkdown(paragraph.join(' '))}</p>); paragraph = []; } };
+  const flushCode = () => { if (code) { const source = code.join('\n'); blocks.push(<div className="code-block" key={`code-${blocks.length}`}><div className="code-header"><span>{language || '代码'}</span><button title="复制代码" onClick={() => navigator.clipboard?.writeText(source)}>复制</button></div><pre><code>{source}</code></pre></div>); code = null; language = ''; } };
+  lines.forEach((line, index) => {
+    const fence = line.match(/^\s*```(.*)$/);
+    if (fence) { if (code) flushCode(); else { flushParagraph(); code = []; language = fence[1].trim(); } return; }
+    if (code) { code.push(line); return; }
+    if (!line.trim()) { flushParagraph(); return; }
+    const heading = line.match(/^\s*(#{1,3})\s+(.+)$/);
+    if (heading) { flushParagraph(); blocks.push(<div className={`md-heading md-h${heading[1].length}`} key={`h-${index}`}>{inlineMarkdown(heading[2])}</div>); return; }
+    const bullet = line.match(/^\s*[-*]\s+(.+)$/);
+    if (bullet) { flushParagraph(); blocks.push(<div className="md-list-item" key={`b-${index}`}><span>•</span><div>{inlineMarkdown(bullet[1])}</div></div>); return; }
+    const numbered = line.match(/^\s*(\d+)\.\s+(.+)$/);
+    if (numbered) { flushParagraph(); blocks.push(<div className="md-list-item" key={`n-${index}`}><span>{numbered[1]}.</span><div>{inlineMarkdown(numbered[2])}</div></div>); return; }
+    paragraph.push(line.trim());
+  });
+  flushCode(); flushParagraph();
+  return <div className="markdown-content">{blocks.length ? blocks : <p>{text}</p>}</div>;
+}
+
+function ApprovalDialog({ request, onDecision }: { request: any; onDecision: (decision: string) => void }) {
+  const params = request.params || {};
+  const isFile = request.method === 'item/fileChange/requestApproval';
+  const isInput = request.method === 'item/tool/requestUserInput';
+  const isPermission = request.method === 'item/permissions/requestApproval';
+  const isMcp = request.method === 'mcpServer/elicitation/request';
+  const title = isFile ? '确认文件变更' : isInput ? '需要补充信息' : isPermission ? '请求额外权限' : isMcp ? 'MCP 请求输入' : '需要你的确认';
+  const reason = params.reason || params.message || (isFile ? 'Codex 请求应用文件修改。' : isInput ? '当前工具请求用户输入。' : isPermission ? 'Codex 请求额外的工作区权限。' : isMcp ? `服务器 ${params.serverName || ''} 请求输入。` : 'Codex 请求执行一项命令。');
+  return <div className="approval-backdrop"><section className="approval-dialog"><h2>{title}</h2><p>{reason}</p>{params.command && <pre>{params.command}</pre>}{params.cwd && <small>{params.cwd}</small>}<div className="approval-actions"><button onClick={() => onDecision(isInput ? 'cancel' : 'decline')}>{isInput ? '取消' : '拒绝'}</button><button className="primary" onClick={() => onDecision('accept')}>{isInput ? '提交' : '允许'}</button></div></section></div>;
+}
+
+function Chat({ onForkMessage, catalog, active, input, setInput, send, cancel, running, activity, model, models, update, attachments, addAttachment, showModel, setShowModel, showProjects, setShowProjects, toast, project, status, onRename, onArchive, onDelete, onFork }: { onForkMessage: (messageId: string) => Promise<void>; catalog: ReturnType<typeof useModelCatalog>; active: DesktopState['threads'][number] | undefined; input: string; setInput: (value: string) => void; send: () => void; cancel: () => void; running: boolean; activity?: string; model: string; models: string[]; update: (fn: (next: DesktopState) => void) => void; attachments: string[]; addAttachment: () => void; showModel: boolean; setShowModel: (value: boolean) => void; showProjects: boolean; setShowProjects: (value: boolean) => void; toast: (text: string) => void; project?: string; status: string; onRename: () => void; onArchive: () => void; onDelete: () => void; onFork: () => void }) {
+  const actions = active?.messages.length ? <div className="thread-toolbar"><span>{active.title}</span><div><button onClick={onRename}>重命名</button><button onClick={onFork}>分叉</button><button onClick={onArchive}>归档</button><button onClick={onDelete}>删除</button></div></div> : null;
+  return <>{active?.messages.length ? <div className="thread-view">{groupMessages(active.messages).map(group => {
+    const message = group[0];
+    return message.tool ? <ToolActivityGroup key={message.id} messages={group} /> : <div className={`message ${message.role}`} key={message.id}>{message.role === 'assistant' ? <><MarkdownMessage content={message.content} />{isFinalReply(active.messages, active.messages.indexOf(message)) && <MessageActions content={message.content} disabled={running || active.status === 'running' || status !== 'connected' || !active.remoteId} onFork={() => onForkMessage(message.id)} onError={toast} />}</> : <div className="user-text">{message.content}</div>}</div>;
+  })}{activity && <div className="activity">{activity}</div>}</div> : <div className="welcome"><div className="spark">✧</div><h1>我们要构建什么？</h1><div className="cards">{['探索并理解代码', '构建新功能、应用或工具', '审查代码并提出修改建议', '修复问题和失败'].map(text => <button key={text} onClick={() => setInput(text)}>{text}</button>)}</div></div>}<div className="composer"><button className="project" onClick={() => setShowProjects(!showProjects)}>▱ {project ?? '选择项目'}</button>{showProjects && <div className="floating-menu project-menu"><button onClick={() => { update(next => { next.activeProjectId = 'my-agent-plantform'; }); setShowProjects(false); toast('已选择项目'); }}>当前项目 · my-agent-plantform</button><button onClick={() => { update(next => { next.activeProjectId = '最近使用的项目'; }); setShowProjects(false); toast('已选择项目'); }}>最近使用的项目</button></div>}{attachments.length > 0 && <div className="attachment-list">{attachments.map(name => <span key={name}>{name}</span>)}</div>}<textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') send(); }} placeholder={status === 'connected' ? '随心输入' : '等待 Codex app-server…'}/><div className="composer-footer"><span className="composer-left"><button className="icon-button" onClick={addAttachment} title="添加附件">＋</button><span>完全访问</span><i className={`status-dot ${status}`} />{status === 'connected' ? '已连接' : status}</span><span className="composer-right"><ModelPicker catalog={catalog} selected={model} open={showModel} setOpen={setShowModel} onSelect={id => update(next => { next.model = id; })} /> <button className="send" title={running ? '停止生成' : '发送'} onClick={running ? cancel : send}>{running ? '■' : '↑'}</button></span></div></div></>;
+}
+
+function Workspace({ page, state, models, update, toast, providerStatus }: { page: Page; state: DesktopState; models: string[]; update: (fn: (next: DesktopState) => void) => void; toast: (text: string) => void; providerStatus?: any }) {
+  const title = page === 'pulls' ? 'Pull Request' : page === 'scheduled' ? '已安排' : page === 'plugins' ? '插件' : '设置';
+  const providerCard = page === 'settings' ? <div className="page-card provider-card"><b>LLM Provider</b><small>MiniMax 中国服务 · {providerStatus?.endpoint || 'https://api.minimaxi.com/v1'}</small><span className={providerStatus?.keyConfigured ? 'provider-ok' : 'provider-missing'}>{providerStatus?.keyConfigured ? 'API Key 已注入当前进程' : '未检测到 API Key（仅当前副本进程生效）'}</span></div> : null;
+  return <section className="page"><h1>{title}</h1><p>{page === 'settings' ? '管理 Codex Desktop 的显示与工作区偏好' : '本地工作区演示页面，已准备好接入对应 connector。'}</p>{page === 'pulls' && <div className="page-card"><b>feat: refresh desktop workspace</b><small>#128 · codex-ui · 更新于 12 分钟前</small><button onClick={() => toast('已打开本地 diff review')}>查看变更</button></div>}{page === 'scheduled' && <><div className="page-card"><b>每日工作区检查</b><small>每天 09:00 · 当前项目 · 运行中</small><button onClick={() => toast('任务已暂停（演示）')}>暂停</button></div><div className="page-card"><b>创建新的自动化</b><small>让 Codex 定时检查代码、生成报告或提醒你。</small><button onClick={() => toast('创建任务（演示）')}>创建任务</button></div></>}{page === 'settings' && <><label className="setting-row">主题<select value={state.theme} onChange={event => update(next => { next.theme = event.target.value as DesktopState['theme']; })}><option value="light">浅色</option><option value="dark">深色</option></select></label><label className="setting-row">默认模型<select value={state.model} onChange={event => update(next => { next.model = event.target.value; })}>{models.map(model => <option key={model} value={model}>{model}</option>)}</select></label><label className="setting-row">默认项目<select value={state.activeProjectId ?? ''} onChange={event => update(next => { next.activeProjectId = event.target.value || undefined; })}><option value="">未选择项目</option><option value="my-agent-plantform">my-agent-plantform</option></select></label></>}</section>;
+}
+
+declare global { interface Window { desktop?: { toggleMaximize: () => Promise<void>; minimize?: () => Promise<void>; close?: () => Promise<void>; providerStatus?: () => Promise<any>; listModels?: () => Promise<any>; getProjectRoot?: () => Promise<string>; readExtensionFile?: (path: string, kind: 'image' | 'skill') => Promise<any> }; codex?: any } }
+createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>);

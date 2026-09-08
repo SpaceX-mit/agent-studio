@@ -1,0 +1,12 @@
+# Project-local runtime state and generated verification artifacts.
+/.project-cache/
+/desktop/.project-cache/
+
+# Node and Vite outputs can be recreated from the lockfile.
+/desktop/node_modules/
+/desktop/dist/
+/desktop/*.tsbuildinfo
+
+# Build products belong to the nested upstream repository, not this wrapper.
+/codex-upstream/codex-rs/target/
+/codex-upstream/target/
