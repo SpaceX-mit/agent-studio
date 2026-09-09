@@ -80,9 +80,14 @@ that model ID. Test artifacts remain in the D-drive project cache.
 - A live MiniMax test requires `MINIMAX_API_KEY` in the launching process. No
   credential was available to this development turn; local protocol and actual
   Codex execution tests do not establish live model reliability.
-- OpenAI-hosted web search cannot execute through Chat Completions and is
-  disabled in the project app-server launch arguments. Other unsupported input
-  or tool types fail explicitly rather than silently losing their meaning.
+- OpenAI-hosted web search cannot execute through Chat Completions and remains
+  disabled in the app-server launch arguments. Felix registers a project-local
+  `felix_web_search` MCP server that exposes a structured `web_search` function
+  backed by public Bing News and Google News RSS feeds. It has bounded query
+  length, timeout, deduplication, and result count limits; provider/network
+  failures are returned as tool errors. The MCP config is generated under
+  `.project-cache/codex-home`, so the official Codex Desktop configuration is
+  never changed.
 - Textual XML that resembles a tool call is not executable. The upstream model
   must return structured `tool_calls`; the adapter never runs model prose.
 - The current input mapping covers text. Direct image-message input is rejected

@@ -3,7 +3,7 @@ const path = require('node:path');
 const { spawn, execFile } = require('node:child_process');
 const { once } = require('node:events');
 const { CodexRpc } = require('./codex-rpc.cjs');
-const { findCommand } = require('./codex-server.cjs');
+const { findCommand, ensureProjectConfig } = require('./codex-server.cjs');
 const { startMiniMaxAdapter } = require('./minimax-adapter.cjs');
 
 function createTaskRunner(projectRoot, { apiKey = () => process.env.MINIMAX_API_KEY, upstream, timeoutMs = 10 * 60 * 1000 } = {}) {
@@ -25,6 +25,7 @@ function createTaskRunner(projectRoot, { apiKey = () => process.env.MINIMAX_API_
         adapter = startMiniMaxAdapter({ port: 0, apiKey: apiKey(), upstream });
         await once(adapter, 'listening');
         if (signal.aborted || halted) throw new Error('执行已停止。');
+        ensureProjectConfig(home, projectRoot);
         const command = findCommand(projectRoot).command;
         const settings = [
           'model_providers.minimax.name="MiniMax"', 'model_providers.minimax.wire_api="responses"',

@@ -23,6 +23,11 @@
   letter-spacing: 0;
 }
 
+/* Keep the sidebar-to-content handoff subtle and consistent with the window frame. */
+.desktop-body main { border-top-left-radius: 18px; }
+.window-surface.maximized .desktop-body main { border-top-left-radius: 0; }
+.desktop-body aside.sidebar { border-right-color: #eeeeee; }
+
 .sidebar .brand-row {
   flex-shrink: 0;
   height: 32px;

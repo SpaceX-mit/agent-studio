@@ -9,6 +9,7 @@ export const defaultState = (): DesktopState => ({
   mode: 'code',
   theme: 'light',
   model: '',
+  permission: 'on-request',
   threads: [],
   projects: [],
   automations: []
@@ -18,6 +19,7 @@ export function loadState(): DesktopState {
   try {
     const state: DesktopState = { ...defaultState(), ...JSON.parse(localStorage.getItem(KEY) ?? '{}') };
     state.mode = state.mode === 'work' ? 'work' : 'code';
+    state.permission = ['on-request', 'workspace-write', 'danger-full-access'].includes(state.permission) ? state.permission : 'on-request';
     state.threads.forEach(ensureThreadTitle);
     return state;
   }

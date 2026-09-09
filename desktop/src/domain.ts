@@ -59,6 +59,7 @@ export interface DesktopState {
   activeProjectId?: string;
   theme: 'light' | 'dark';
   model: string;
+  permission: 'on-request' | 'workspace-write' | 'danger-full-access';
   threads: Thread[];
   projects: Project[];
   automations: Automation[];
