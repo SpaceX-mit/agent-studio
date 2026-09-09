@@ -15,7 +15,10 @@ export function WindowControls() {
     void window.desktop?.windowState?.().then(state => {
       if (alive && !receivedUpdate) setMaximized(Boolean(state.maximized));
     }).catch(() => {});
-    return () => { alive = false; aliveRef.current = false; unsubscribe?.(); };
+    const poll = window.setInterval(() => {
+      void window.desktop?.windowState?.().then(state => { if (alive) setMaximized(Boolean(state.maximized)); }).catch(() => {});
+    }, 350);
+    return () => { alive = false; aliveRef.current = false; window.clearInterval(poll); unsubscribe?.(); };
   }, []);
 
   return <div className="window-controls" role="group" aria-label="窗口控制">
@@ -23,7 +26,13 @@ export function WindowControls() {
       <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1 6.5h10" /></svg>
     </button>
     <button type="button" data-window-action="maximize-restore" aria-label={maximized ? '向下还原' : '最大化'} title={maximized ? '向下还原' : '最大化'} onClick={async () => {
-      try { const result = await window.desktop?.toggleMaximize?.(); if (aliveRef.current && result) setMaximized(Boolean(result.maximized)); }
+      try {
+        const result = await window.desktop?.toggleMaximize?.();
+        if (aliveRef.current && result) setMaximized(Boolean(result.maximized));
+        // A second read handles DWM state changes that complete after the IPC response.
+        const settled = await window.desktop?.windowState?.();
+        if (aliveRef.current && settled) setMaximized(Boolean(settled.maximized));
+      }
       catch { /* keep the current state if the native window is unavailable */ }
     }}>
       <svg viewBox="0 0 12 12" aria-hidden="true">{maximized

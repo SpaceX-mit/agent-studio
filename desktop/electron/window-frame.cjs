@@ -12,7 +12,7 @@ function resizeBounds(bounds, edge, dx, dy, minimum) {
 function wireWindowFrame(win, ipcMain, enabled) {
   let drag;
   const point = value => Number.isFinite(value?.x) && Number.isFinite(value?.y);
-  const state = () => ({ maximized: win.isMaximized() || win.isFullScreen() });
+  const state = () => ({ maximized: Boolean(win.__manualMaximized) || win.isMaximized() || win.isFullScreen() });
   const publish = () => { drag = undefined; if (!win.webContents.isDestroyed()) win.webContents.send('window:state', state()); };
   const resize = (event, input) => {
     if (!enabled || event.sender !== win.webContents || !input) return;

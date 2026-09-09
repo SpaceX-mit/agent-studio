@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, Notification, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, Notification, dialog, screen } = require('electron');
 const path = require('node:path');
 const { CodexServer } = require('./codex-server.cjs');
 const { listMiniMaxModels } = require('./minimax-models.cjs');
@@ -23,6 +23,8 @@ const scheduler = new TaskScheduler({
   runner: createTaskRunner(projectRoot),
 });
 let mainWindow;
+let manualMaximized = false;
+let restoreBounds;
 let quitting = false;
 let tasksStopped = false;
 let stoppingTasks;
@@ -98,11 +100,25 @@ function createWindow() {
   }
 }
 
-ipcMain.handle('window:toggle-maximize', event => {
+ipcMain.handle('window:toggle-maximize', async event => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win || win.isDestroyed()) return { maximized: false };
-  win.isMaximized() ? win.unmaximize() : win.maximize();
-  return { maximized: win.isMaximized() || win.isFullScreen() };
+  const shouldMaximize = !manualMaximized && !(win.isMaximized() || win.isFullScreen());
+  if (shouldMaximize) {
+    restoreBounds = win.getBounds();
+    const display = screen.getDisplayMatching(restoreBounds);
+    win.setBounds(display.workArea, false);
+    manualMaximized = true;
+  } else {
+    if (restoreBounds) win.setBounds(restoreBounds, false);
+    manualMaximized = false;
+  }
+  win.__manualMaximized = manualMaximized;
+  if (!win.webContents.isDestroyed()) win.webContents.send('window:state', { maximized: manualMaximized });
+  // Windows may apply maximize/unmaximize asynchronously, especially after
+  // moving the frameless window between monitors. Let DWM settle first.
+  await new Promise(resolve => setTimeout(resolve, 80));
+  return { maximized: manualMaximized || win.isMaximized() || win.isFullScreen() };
 });
 ipcMain.handle('window:minimize', event => BrowserWindow.fromWebContents(event.sender)?.minimize());
 ipcMain.handle('window:close', event => BrowserWindow.fromWebContents(event.sender)?.close());
