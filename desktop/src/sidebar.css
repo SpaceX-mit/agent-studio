@@ -7,7 +7,8 @@
   --sidebar-selected-hover: #dfe0e1;
   --sidebar-focus: #73777c;
   display: flex;
-  flex: 0 0 298px;
+  flex: 0 0 400px;
+  width: 400px;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
@@ -39,7 +40,9 @@
 .sidebar .mode-trigger[aria-expanded="true"] { background: var(--sidebar-selected); }
 .sidebar .mode-trigger svg { width: 14px; height: 14px; color: var(--sidebar-muted); }
 .sidebar .mode-menu { position: absolute; top: calc(100% + 6px); left: -6px; z-index: 12; width: 232px; max-width: calc(100vw - 32px); padding: 6px; border: 1px solid #dedfe1; border-radius: 8px; background: #fff; color: var(--sidebar-text); box-shadow: 0 8px 24px #00000012; }
-.sidebar .mode-menu button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; height: 42px; padding: 0 10px; font-size: 14px; }
+.sidebar .mode-menu button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 60px; padding: 9px 10px; font-size: 14px; }
+.sidebar .mode-option-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; line-height: 20px; overflow-wrap: anywhere; }
+.sidebar .mode-option-text small { color: var(--sidebar-muted); font-size: 13px; font-weight: 400; line-height: 18px; }
 .dark .sidebar .mode-menu { background: #303234; border-color: #4b4e52; }
 
 .sidebar svg {
@@ -131,6 +134,14 @@
   margin-left: auto;
   color: var(--sidebar-muted);
 }
+.sidebar .thread-actions { display:flex; align-items:center; gap:1px; flex-shrink:0; margin-left:auto; opacity:0; transition:opacity 120ms ease; }
+.sidebar .recent:hover .thread-actions, .sidebar .recent:focus-visible .thread-actions, .sidebar .recent[aria-current="page"] .thread-actions { opacity:1; }
+.sidebar .thread-action { display:grid; place-items:center; width:21px; height:21px; border-radius:4px; color:var(--sidebar-muted); cursor:pointer; }
+.sidebar .thread-action svg { width:13px; height:13px; }
+.sidebar .thread-action:hover, .sidebar .thread-action:focus-visible { background:var(--sidebar-selected); color:var(--sidebar-text); outline:none; }
+.sidebar .thread-action.active { color:#4f6d8a; opacity:1; }
+.sidebar .thread-action.danger:hover, .sidebar .thread-action.danger:focus-visible { color:#b64b45; background:#f5e2e0; }
+.sidebar .recent:hover .thread-pin, .sidebar .recent:focus-visible .thread-pin, .sidebar .recent[aria-current="page"] .thread-pin { display:none; }
 
 .sidebar .recent .thread-title-viewport { flex: 1; min-width: 0; overflow: hidden; }
 .sidebar .recent .thread-title-text { display: inline-block; width: max-content; max-width: none; overflow: visible; vertical-align: top; }
@@ -184,6 +195,21 @@
 .desktop-body aside.sidebar[hidden] { display: none; }
 
 .desktop-titlebar { font-size: 13px; gap: 14px; padding: 0 8px; }
+.desktop-titlebar nav { align-items: center; gap: 4px; }
+.desktop-titlebar nav button {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 10px;
+  color: #888;
+  line-height: 26px;
+  white-space: nowrap;
+}
+.desktop-titlebar nav button:hover { background: #eaeaea; }
+.desktop-titlebar nav button:active { background: #dedede; }
+.desktop-titlebar nav button:focus-visible { outline: 2px solid #73777c; outline-offset: -2px; }
+.dark .desktop-titlebar nav button { color: #a8adb2; }
+.dark .desktop-titlebar nav button:hover { background: #3d4043; }
+.dark .desktop-titlebar nav button:active { background: #484c50; }
 .titlebar-navigation { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .desktop-titlebar .titlebar-icon {
   display: grid;
@@ -216,12 +242,12 @@
 .dark .sidebar .sidebar-scroll { scrollbar-color: #484c50 transparent; }
 .dark .sidebar .side-search { border-color: #4b4e52; }
 
-@media (max-width: 900px) {
-  .desktop-body aside.sidebar { flex-basis: 240px; width: 240px; }
+@media (max-width: 1100px) {
+  .desktop-body aside.sidebar { flex-basis: 340px; width: 340px; }
 }
 
-@media (max-width: 640px) {
-  .desktop-body aside.sidebar { flex-basis: 200px; width: 200px; }
+@media (max-width: 760px) {
+  .desktop-body aside.sidebar { flex-basis: 280px; width: 280px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

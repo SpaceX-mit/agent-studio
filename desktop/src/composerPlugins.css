@@ -1,0 +1,36 @@
+.work-mode .work-plugins { border-radius:18px; padding:4px 10px; margin-left:-10px; }
+.work-mode .work-plugins:hover,.work-mode .work-plugins[aria-expanded=true] { background:#e7e8e9; }
+.composer-plugin-preview { display:flex; align-items:center; gap:2px; }
+.composer-plugin-preview .ext-icon { width:18px; height:22px; flex-basis:18px; border:0; padding:0; background:none; border-radius:3px; }
+.composer-plugin-preview .ext-icon img,.composer-plugin-preview .ext-icon svg { width:18px; height:20px; object-fit:contain; }
+.composer-plugin-layer { position:fixed; inset:0; z-index:50; pointer-events:none; background:transparent; font:14px/1.5 "Segoe UI","Microsoft YaHei UI",sans-serif; color:#292c2f; --plugin-bg:#fff; --plugin-line:#e6e7e8; --plugin-hover:#f0f1f2; --plugin-muted:#92969a; }
+.composer-plugin-menu { position:fixed; pointer-events:auto; padding:6px; max-height:calc(100dvh - 24px); display:flex; flex-direction:column; border:1px solid var(--plugin-line); border-radius:20px; background:var(--plugin-bg); box-shadow:0 6px 16px #00000012,0 14px 36px #00000006; }
+.composer-plugin-menu button { display:flex; align-items:center; gap:10px; width:100%; min-height:34px; flex-shrink:0; padding:6px 10px; border:0; border-radius:12px; text-align:left; color:inherit; background:none; font:inherit; cursor:pointer; }
+.composer-plugin-menu button:hover,.composer-plugin-menu button:focus-visible { background:var(--plugin-hover); }
+.composer-plugin-menu button:focus-visible { outline:2px solid #8f9eaa; outline-offset:-2px; }
+.composer-plugin-menu button>span { flex:1; min-width:0; overflow-wrap:anywhere; }
+.composer-plugin-menu svg { width:17px; height:17px; flex-shrink:0; color:var(--plugin-muted); stroke-width:1.6; }
+.composer-plugin-menu .ext-icon { flex:0 0 18px; width:18px; height:20px; padding:0; border:0; border-radius:3px; background:none; }
+.composer-plugin-menu .ext-icon img,.composer-plugin-menu .ext-icon svg { width:18px; height:20px; object-fit:contain; }
+.composer-plugin-search { display:flex; align-items:center; gap:8px; flex-shrink:0; padding:7px 10px 10px; }
+.composer-plugin-search input { width:100%; min-width:0; padding:0; border:0; outline:0; background:none; color:inherit; font:inherit; }
+.composer-plugin-search input::placeholder { color:var(--plugin-muted); }
+.composer-plugin-list { min-height:0; max-height:204px; overflow-y:auto; scrollbar-width:thin; scrollbar-color:#e2e3e4 transparent; }
+.composer-plugin-connect { margin:6px 8px 0; padding-top:6px; border-top:1px solid var(--plugin-line); flex-shrink:0; }
+.composer-plugin-connect button { margin:0 -8px; width:calc(100% + 16px); }
+.composer-plugin-submenu { border-radius:18px; }
+.composer-plugin-menu .composer-plugin-browse { border-radius:0 0 12px 12px; border-top:1px solid var(--plugin-line); margin-top:5px; padding-top:10px; }
+.composer-plugin-status { display:flex; align-items:center; gap:6px; padding:8px 10px; margin:0; color:var(--plugin-muted); font-size:13px; }
+.composer-plugin-error { padding:8px 10px; color:#ae443b; font-size:12px; overflow-wrap:anywhere; overflow:auto; }
+.composer-plugin-error button { min-height:28px; padding:2px 0; }
+.dark .work-plugins:hover,.dark .work-plugins[aria-expanded=true] { background:#484c50; }
+.composer-plugin-layer.dark { color:#e3e5e7; --plugin-bg:#303234; --plugin-line:#484c50; --plugin-hover:#414549; --plugin-muted:#a4a9ae; color-scheme:dark; }
+.composer-plugin-layer.dark .composer-plugin-list { scrollbar-color:#5b6065 transparent; }
+.composer-plugin-chips { display:flex; flex-wrap:wrap; gap:6px; max-height:88px; overflow-y:auto; margin-bottom:6px; }
+.composer-plugin-chips>span { display:flex; align-items:center; gap:5px; padding:3px 6px; border:1px solid #e0e3e5; border-radius:7px; background:#f6f7f8; color:#454a4e; font-size:12px; min-width:0; max-width:100%; }
+.composer-plugin-chips>span>span:not(.ext-icon) { overflow-wrap:anywhere; }
+.composer-plugin-chips .ext-icon { width:16px; height:18px; flex:0 0 16px; padding:0; border:0; background:none; }
+.composer-plugin-chips .ext-icon img,.composer-plugin-chips .ext-icon svg { width:16px; height:18px; object-fit:contain; }
+.composer-plugin-chips button { display:grid; place-items:center; width:20px; height:20px; flex-shrink:0; padding:0; border:0; background:none; color:#898f94; cursor:pointer; }
+.composer-plugin-chips button svg { width:12px; height:12px; }
+.dark .composer-plugin-chips>span { background:#3d4246; border-color:#555b60; color:#e1e4e6; }

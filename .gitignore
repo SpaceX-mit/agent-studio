@@ -3,6 +3,7 @@
 /desktop/.project-cache/
 
 # Node and Vite outputs can be recreated from the lockfile.
+/node_modules/
 /desktop/node_modules/
 /desktop/dist/
 /desktop/*.tsbuildinfo

@@ -68,16 +68,23 @@ async function main() {
     const modeTrigger = page.getByRole('button', { name: '切换模式', exact: true });
     await modeTrigger.click();
     assert.equal(await page.getByRole('menuitemradio', { name: 'Code', exact: true }).getAttribute('aria-checked'), 'true');
+    assert.equal(await page.getByRole('menuitemradio', { name: '工作', exact: true }).locator('small').innerText(), '创建、学习和探索');
+    assert.equal(await page.getByRole('menuitemradio', { name: 'Code', exact: true }).locator('small').innerText(), '构建、调试和发布');
+    for (const item of await page.locator('.mode-menu button').all()) {
+      assert.equal(await item.evaluate(element => element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth), false);
+    }
     await page.screenshot({ path: path.join(artifacts, 'mode-menu.png') });
     await page.getByRole('menuitemradio', { name: '工作', exact: true }).click();
     assert.equal(await modeTrigger.innerText(), '工作');
-    assert.equal(await page.locator('#sidebar-projects').count(), 0);
+    assert.equal(await page.locator('#sidebar-projects').isVisible(), true);
+    assert.equal(await page.locator('.sidebar-project').isVisible(), true);
     assert.deepEqual(await page.locator('.sidebar-nav').allTextContents(), ['新对话', '已安排', '插件']);
     assert.equal(await rows.count(), 48);
     await page.screenshot({ path: path.join(artifacts, 'work-sidebar.png') });
     await page.reload();
     assert.equal(await modeTrigger.innerText(), '工作');
-    assert.equal(await page.locator('#sidebar-projects').count(), 0);
+    assert.equal(await page.locator('#sidebar-projects').isVisible(), true);
+    assert.equal(await page.locator('.sidebar-project').isVisible(), true);
     await modeTrigger.focus();
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('End');
@@ -281,10 +288,22 @@ async function main() {
       assert.equal(await page.locator('.sidebar .brand').innerText(), 'Code', 'Mode label stays separate from working directory');
     }
     const firstPrompt = '检查当前工作目录中的配置文件，分析编译失败原因，并给出完整的修复步骤和验证结果';
+    const turnsBeforeEnter = await page.evaluate(() => window.__requests.filter(request => request.method === 'turn/start').length);
+    await messageInput.fill('   ');
+    await messageInput.press('Enter');
+    assert.equal(await page.getByRole('button', { name: '发送', exact: true }).isDisabled(), true);
+    await messageInput.fill('中文输入');
+    await messageInput.dispatchEvent('compositionstart');
+    await messageInput.dispatchEvent('keydown', { key: 'Enter', code: 'Enter', isComposing: true, keyCode: 229 });
+    await messageInput.dispatchEvent('compositionend');
+    await messageInput.press('Shift+Enter');
+    assert.equal(await messageInput.inputValue(), '中文输入\n', 'Shift+Enter inserts a newline');
+    assert.equal(await page.evaluate(() => window.__requests.filter(request => request.method === 'turn/start').length), turnsBeforeEnter, 'Blank input and IME confirmation never send');
     await messageInput.fill(firstPrompt);
-    await page.getByRole('button', { name: '发送', exact: true }).click();
+    await messageInput.press('Enter');
     await page.waitForFunction(title => document.querySelector('.recent[aria-current="page"]')?.getAttribute('aria-label') === title, firstPrompt);
     await page.waitForFunction(() => window.__requests.some(request => request.method === 'thread/name/set'));
+    assert.equal(await page.evaluate(() => window.__requests.filter(request => request.method === 'turn/start').length), turnsBeforeEnter + 1, 'Enter sends exactly one turn');
     assert.equal(await page.evaluate(() => window.__requests.find(request => request.method === 'thread/name/set').params.name), firstPrompt);
     page.once('dialog', dialog => dialog.accept('新对话'));
     await page.getByRole('button', { name: '重命名', exact: true }).click();
@@ -294,6 +313,49 @@ async function main() {
     assert.equal(await selected.innerText(), '新对话', 'An explicitly renamed placeholder is not automatically replaced');
     await page.reload();
     assert.equal(await selected.innerText(), '新对话');
+    await modeTrigger.click();
+    await page.getByRole('menuitemradio', { name: '工作', exact: true }).click();
+    await page.locator('.sidebar-nav').filter({ hasText: '新对话' }).click();
+    await page.getByRole('heading', { name: '我们要做什么？', exact: true }).waitFor();
+    assert.equal(await messageInput.inputValue(), '');
+    assert.equal(await page.locator('.welcome-mark, .cards').count(), 0);
+    assert.equal(await page.locator('.attachment-list').count(), 0, 'New chats do not inherit another chat’s attachments');
+    const workDraft = '帮我整理本周的工作进展，并列出下周需要跟进的事项。';
+    await messageInput.fill(workDraft);
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate(theme => document.querySelector('.desktop-app').classList.toggle('dark', theme === 'dark'), theme);
+      for (const viewport of [{ width: 1280, height: 820 }, { width: 960, height: 640 }, { width: 600, height: 720 }]) {
+        await page.setViewportSize(viewport);
+        const geometry = await page.evaluate(() => {
+          const main = document.querySelector('main').getBoundingClientRect();
+          const heading = document.querySelector('.work-welcome-heading').getBoundingClientRect();
+          const composer = document.querySelector('.composer').getBoundingClientRect();
+          const strip = document.querySelector('.project-strip').getBoundingClientRect();
+          const footer = document.querySelector('.composer-footer');
+          return { ordered: heading.bottom < composer.top && Math.abs(composer.bottom - strip.top) < 1, contained: strip.bottom <= main.bottom && heading.top >= main.top, fits: footer.scrollWidth <= footer.clientWidth && document.documentElement.scrollWidth <= innerWidth };
+        });
+        assert.deepEqual(geometry, { ordered: true, contained: true, fits: true });
+        await page.screenshot({ path: path.join(artifacts, `work-new-chat-${theme}-${viewport.width}.png`) });
+      }
+    }
+    await page.setViewportSize({ width: 1280, height: 820 });
+    await page.locator('.work-plugins').click();
+    await page.getByRole('button', { name: '连接插件', exact: true }).click();
+    await page.getByRole('menuitem', { name: '浏览所有插件', exact: true }).click();
+    await page.locator('.extensions').waitFor();
+    await back.click();
+    await page.getByRole('heading', { name: '我们要做什么？', exact: true }).waitFor();
+    assert.equal(await messageInput.inputValue(), workDraft, 'Plugin navigation preserves the draft');
+    await messageInput.press('Enter');
+    await page.locator('.thread-view .message.user').getByText(workDraft, { exact: true }).waitFor();
+    assert.equal(await page.locator('.work-welcome-heading').count(), 0);
+    assert.ok(await page.locator('.thread-view').evaluate(element => getComputedStyle(element).overflowY === 'auto'));
+    await page.locator('.sidebar-nav').filter({ hasText: '新对话' }).click();
+    await modeTrigger.click();
+    await page.getByRole('menuitemradio', { name: 'Code', exact: true }).click();
+    await page.locator('.welcome-mark').waitFor();
+    assert.equal(await page.locator('.cards button').count(), 4);
+    assert.equal(await page.locator('.work-welcome-heading').count(), 0);
     assert.deepEqual(errors, []);
     console.log('PASS: Code/Work mode menu, persistence, keyboard dismissal, removed Pull Request, history navigation, sidebar toggle, selected/hover colors, search, new chat, scrolling and narrow/dark layouts.');
   } finally {

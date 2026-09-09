@@ -27,7 +27,7 @@ export function ModePicker({ mode, onChange }: { mode: DesktopState['mode']; onC
   }}>
     <button className="brand mode-trigger" ref={trigger} aria-label="切换模式" aria-haspopup="menu" aria-expanded={open} aria-controls={menuId} onClick={() => setOpen(value => !value)}><span>{mode === 'work' ? '工作' : 'Code'}</span><ChevronDown aria-hidden="true" /></button>
     {open && <div id={menuId} className="mode-menu" role="menu" aria-label="模式">
-      {([{ id: 'work', label: '工作' }, { id: 'code', label: 'Code' }] as const).map(item => <button key={item.id} role="menuitemradio" aria-checked={mode === item.id} tabIndex={-1} onClick={() => { onChange(item.id); setOpen(false); trigger.current?.focus(); }}><span>{item.label}</span>{mode === item.id && <Check aria-hidden="true" />}</button>)}
+      {([{ id: 'work', label: '工作', description: '创建、学习和探索' }, { id: 'code', label: 'Code', description: '构建、调试和发布' }] as const).map(item => <button key={item.id} role="menuitemradio" aria-label={item.label} aria-describedby={`${menuId}-${item.id}-description`} aria-checked={mode === item.id} tabIndex={-1} onClick={() => { onChange(item.id); setOpen(false); trigger.current?.focus(); }}><span className="mode-option-text"><span>{item.label}</span><small id={`${menuId}-${item.id}-description`}>{item.description}</small></span>{mode === item.id && <Check aria-hidden="true" />}</button>)}
     </div>}
   </div>;
 }

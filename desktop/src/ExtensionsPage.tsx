@@ -8,7 +8,7 @@ type Selection = { kind: 'plugin'; item: Plugin } | { kind: 'skill'; item: Skill
 type SkillsResponse = { data: { skills: Skill[]; errors: { path: string; message: string }[] }[] };
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-function ExtensionIcon({ item }: { item: Plugin | Skill }) {
+export function ExtensionIcon({ item }: { item: Plugin | Skill }) {
   const face = item.interface;
   const local = face?.iconLarge || face?.logo || face?.iconSmall || face?.composerIcon;
   const remote = face?.iconLargeUrl || face?.logoUrl || face?.iconSmallUrl || face?.composerIconUrl;
@@ -156,7 +156,7 @@ export function ExtensionsPage({ connected }: { connected: boolean }) {
   </section>;
 }
 
-function ExtensionDialog({ selection, close, changed }: { selection: Selection; close: () => void; changed: (message: string) => Promise<void> }) {
+export function ExtensionDialog({ selection, close, changed }: { selection: Selection; close: () => void; changed: (message: string) => Promise<void> }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [detail, setDetail] = useState<PluginDetail>();
   const [item, setItem] = useState(selection.item);

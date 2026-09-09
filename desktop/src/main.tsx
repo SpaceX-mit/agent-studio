@@ -10,15 +10,23 @@ import { ToolActivityGroup, groupMessages } from './ToolActivityView';
 import { MessageActions } from './ReplyActions';
 import { branchSnapshot, isFinalReply, replyText } from './messageActions';
 import { archiveThread, connectCodex, deleteThread, forkThread, interruptTurn, listThreadItems, listThreadTurns, listThreads, resumeThread, setThreadName, startThread, startTurn, subscribeCodex } from './codexClient';
-import { ExtensionsPage } from './ExtensionsPage';
+import { ExtensionsPage, ExtensionIcon } from './ExtensionsPage';
 import { ThreadButton } from './ThreadButton';
 import { ModePicker } from './ModePicker';
-import { ArrowLeft, ArrowRight, ArrowUp, Badge, Bug, Clock3, FolderOpen, GitBranch, Hammer, Laptop, PanelLeft, Plus, Puzzle, RefreshCcw, Search, ShieldAlert, Square, SquarePen, Terminal, Telescope } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ArrowUp, Badge, Bug, Clock3, FolderOpen, GitBranch, Hammer, Laptop, PanelLeft, Plus, Puzzle, RefreshCcw, Search, ShieldAlert, Square, SquarePen, Terminal, Telescope, X } from 'lucide-react';
 import { useNavigationHistory } from './useNavigationHistory';
 import type { Page } from './useNavigationHistory';
 import './styles.css';
 import './sidebar.css';
 import './chat.css';
+import { ScheduledPage } from './ScheduledPage';
+import './scheduled.css';
+import { WindowFrame } from './WindowFrame';
+import { WindowControls } from './WindowControls';
+import { ComposerPlugins } from './ComposerPlugins';
+import { extensionName } from './extensions';
+import type { Plugin } from './extensions';
+import type { WindowFrameBridge } from './WindowFrame';
 
 function projectLabel(pathOrName?: string) {
   return pathOrName?.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || pathOrName;
@@ -27,6 +35,7 @@ function projectLabel(pathOrName?: string) {
 function App() {
   const [state, setState] = useState<DesktopState>(() => { const loaded = loadState(); loaded.model = modelId(loaded.model); return loaded; });
   const [input, setInput] = useState('');
+  const [composerPlugins, setComposerPlugins] = useState<Plugin[]>([]);
   const [page, setPage] = useState<Page>('chat');
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const navigation = useNavigationHistory(
@@ -37,12 +46,13 @@ function App() {
   const [showSearch, setShowSearch] = useState(false);
   const [showModel, setShowModel] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
-  const [attachments, setAttachments] = useState<string[]>(() => JSON.parse(localStorage.getItem('codex-attachments') ?? '[]'));
+  const [attachments, setAttachments] = useState<string[]>([]);
   const [notice, setNotice] = useState('');
   const [codexStatus, setCodexStatus] = useState<'connecting' | 'connected' | 'offline' | 'error'>('connecting');
   const [remoteThreadId, setRemoteThreadId] = useState<string>();
   const [runningTurnId, setRunningTurnId] = useState<string>();
   const [approval, setApproval] = useState<any>();
+  const [deleteCandidate, setDeleteCandidate] = useState<string>();
   const [activity, setActivity] = useState<string>();
   const [providerStatus, setProviderStatus] = useState<any>();
   const catalog = useModelCatalog();
@@ -69,6 +79,7 @@ function App() {
       notification: message => {
         const params = message.params || {};
         if (message.method === 'item/agentMessage/delta' && params.delta) {
+          setActivity(undefined);
           update(next => { const thread = next.threads.find(item => params.threadId ? item.remoteId === params.threadId : item.id === activeThreadRef.current); if (!thread) return; const last = thread.messages.find(message => message.id === `live-${params.itemId}`); if (last?.role === 'assistant') last.content += params.delta; else thread.messages.push({ id: `live-${params.itemId}`, role: 'assistant', turnId: params.turnId, content: params.delta, createdAt: new Date().toISOString() }); thread.status = 'running'; });
         }
         if (message.method && ['item/started', 'item/completed', 'item/commandExecution/outputDelta', 'item/fileChange/outputDelta', 'item/fileChange/patchUpdated'].includes(message.method)) {
@@ -132,7 +143,7 @@ function App() {
     const automaticTitle = automaticThreadTitle(existing, text);
     if (!existing) { const draft = structuredClone(state); const created = createThread(draft); localId = created.id; update(next => { next.threads.push(created); next.activeThreadId = created.id; }); }
     update(next => { const thread = next.threads.find(item => item.id === localId); if (thread) { appendMessage(next, thread.id, 'user', text); thread.status = 'running'; } });
-    setInput(''); setPage('chat');
+    setInput(''); setComposerPlugins([]); setPage('chat'); setActivity('正在思考…');
     try {
       const model = modelId(state.model); const modelProvider = 'minimax'; const cwd = await window.desktop?.getProjectRoot?.();
       const local = state.threads.find(item => item.id === localId);
@@ -149,21 +160,23 @@ function App() {
       if (!threadId) throw new Error('没有返回 thread id');
       if (automaticTitle) void setThreadName(threadId, automaticTitle).catch(() => toast('标题已保存在本地，远端同步失败。'));
       let turn;
-      try { turn = await startTurn({ threadId, text, model, modelProvider, effort: effortForModel(state.model), cwd }); }
+      const plugins = composerPlugins.map(plugin => ({ id: plugin.id, name: plugin.name }));
+      try { turn = await startTurn({ threadId, text, plugins, model, modelProvider, effort: effortForModel(state.model), cwd }); }
       catch (error: any) {
         const message = String(error?.message || error);
         if (!/thread\s+not\s+found|unknown\s+thread|no\s+such\s+thread/i.test(message)) throw error;
         threadId = await createRemoteThread();
         if (!threadId) throw new Error('没有返回 thread id');
-        turn = await startTurn({ threadId, text, model, modelProvider, effort: effortForModel(state.model), cwd });
+        turn = await startTurn({ threadId, text, plugins, model, modelProvider, effort: effortForModel(state.model), cwd });
       }
       if (!completedTurns.current.has(turn.turn?.id)) setRunningTurnId(turn.turn?.id);
     } catch (error: any) {
+      setActivity(undefined);
       update(next => { const thread = next.threads.find(item => item.id === localId); if (thread) recordTurnFailure(thread, crypto.randomUUID(), error); });
     } finally { sendingRef.current = false; }
   };
   const cancel = () => { const activeRemoteId = state.threads.find(item => item.id === activeThreadRef.current)?.remoteId || remoteThreadId; if (activeRemoteId && runningTurnId) interruptTurn(activeRemoteId, runningTurnId).catch(() => undefined); };
-  const newChat = () => { setRemoteThreadId(undefined); update(next => createThread(next)); setInput(''); setPage('chat'); };
+  const newChat = () => { setRemoteThreadId(undefined); update(next => createThread(next)); setInput(''); setComposerPlugins([]); setAttachments([]); setPage('chat'); };
   const selectThread = async (thread: DesktopState['threads'][number]) => { update(next => { next.activeThreadId = thread.id; }); setRemoteThreadId(thread.remoteId); setPage('chat'); if (thread.remoteId && codexStatus === 'connected') { try { let items: any[] = []; try { let cursor: string | undefined; do { const page = await listThreadItems(thread.remoteId, cursor); items.push(...(page?.data || page?.items || [])); cursor = page?.nextCursor || undefined; } while (cursor); } catch { const loaded = await resumeThread(thread.remoteId); items = loaded?.thread?.turns?.flatMap((turn: any) => turn.items || []) || []; } update(next => { const local = next.threads.find(item => item.id === thread.id); if (!local) return; if (local.status !== 'running') { local.messages = restoreMessages(items, local.messages); ensureThreadTitle(local); } }); } catch (error: any) { toast(`恢复线程失败：${error.message}`); } } };
   const respondApproval = async (decision: string) => {
     if (!approval) return;
@@ -180,7 +193,11 @@ function App() {
   };
   const renameActive = async () => { const thread = state.threads.find(item => item.id === state.activeThreadId); if (!thread) return; const name = window.prompt('重命名会话', thread.title)?.trim(); if (!name || name === thread.title) return; if (thread.remoteId && codexStatus === 'connected') { try { await setThreadName(thread.remoteId, name); } catch (error: any) { toast(`重命名失败：${error.message}`); return; } } update(next => { const item = next.threads.find(value => value.id === thread.id); if (item) { item.title = name; item.titleSource = 'manual'; } }); };
   const archiveActive = async () => { const thread = state.threads.find(item => item.id === state.activeThreadId); if (!thread) return; if (thread.remoteId && codexStatus === 'connected') { try { await archiveThread(thread.remoteId); } catch (error: any) { toast(`归档失败：${error.message}`); return; } } update(next => { const item = next.threads.find(value => value.id === thread.id); if (item) { item.archived = true; item.status = 'completed'; } }); setRemoteThreadId(undefined); };
-  const deleteActive = async () => { const thread = state.threads.find(item => item.id === state.activeThreadId); if (!thread || !window.confirm('删除这个会话？此操作不可撤销。')) return; if (thread.remoteId && codexStatus === 'connected') { try { await deleteThread(thread.remoteId); } catch (error: any) { toast(`删除失败：${error.message}`); return; } } update(next => { next.threads = next.threads.filter(value => value.id !== thread.id); next.activeThreadId = undefined; }); setRemoteThreadId(undefined); };
+  const performDelete = async (threadId: string) => { const thread = state.threads.find(item => item.id === threadId); if (!thread) return; if (thread.remoteId && codexStatus === 'connected') { try { await deleteThread(thread.remoteId); } catch (error: any) { toast(`删除失败：${error.message}`); return; } } update(next => { next.threads = next.threads.filter(value => value.id !== threadId); if (next.activeThreadId === threadId) next.activeThreadId = undefined; }); setRemoteThreadId(value => value === thread.remoteId ? undefined : value); };
+  const deleteActive = async () => { const thread = state.threads.find(item => item.id === state.activeThreadId); if (thread) setDeleteCandidate(thread.id); };
+  const togglePinned = (threadId: string) => update(next => { const thread = next.threads.find(item => item.id === threadId); if (thread) thread.pinned = !thread.pinned; });
+  const archiveThreadFromSidebar = async (threadId: string) => { const thread = state.threads.find(item => item.id === threadId); if (!thread) return; if (thread.remoteId && codexStatus === 'connected') { try { await archiveThread(thread.remoteId); } catch (error: any) { toast(`归档失败：${error.message}`); return; } } update(next => { const item = next.threads.find(value => value.id === threadId); if (item) { item.archived = true; item.status = 'completed'; if (next.activeThreadId === threadId) next.activeThreadId = undefined; } }); setRemoteThreadId(value => value === thread.remoteId ? undefined : value); };
+  const deleteThreadFromSidebar = async (threadId: string) => { if (state.threads.some(item => item.id === threadId)) setDeleteCandidate(threadId); };
   const forkActive = async () => { const thread = state.threads.find(item => item.id === state.activeThreadId); if (!thread?.remoteId || codexStatus !== 'connected') { toast('当前会话还没有远端线程'); return; } try { const result = await forkThread(thread.remoteId); const remote = result?.thread; if (!remote?.id) throw new Error('没有返回分叉线程'); const copy = { ...thread, id: `remote-${remote.id}`, remoteId: remote.id, title: `${thread.title} · 分支`, messages: structuredClone(thread.messages), updatedAt: new Date().toISOString() }; update(next => { next.threads.push(copy); next.activeThreadId = copy.id; }); setRemoteThreadId(remote.id); toast('已创建会话分支'); } catch (error: any) { toast(`分叉失败：${error.message}`); } };
   const forkFromMessage = async (messageId: string) => {
     const source = state.threads.find(thread => thread.id === state.activeThreadId);
@@ -209,7 +226,12 @@ function App() {
       setRemoteThreadId(copy.remoteId); setInput(''); setPage('chat');
     } finally { forkingRef.current = false; }
   };
-  const addAttachment = () => { const next = attachments.includes('workspace-context.md') ? attachments : [...attachments, 'workspace-context.md']; setAttachments(next); localStorage.setItem('codex-attachments', JSON.stringify(next)); toast('已添加附件（演示）'); };
+  const addAttachment = async () => {
+    const picked = await window.desktop?.pickFiles?.();
+    if (!picked?.length) return;
+    const next = [...new Set([...attachments, ...picked])];
+    setAttachments(next);
+  };
   const navigateHistory = (direction: -1 | 1) => {
     const location = navigation.move(direction);
     if (!location) return;
@@ -228,7 +250,7 @@ function App() {
         <button className="titlebar-icon" aria-label="后退" title="后退" disabled={!navigation.canGoBack} onClick={() => navigateHistory(-1)}><ArrowLeft aria-hidden="true" /></button>
         <button className="titlebar-icon" aria-label="前进" title="前进" disabled={!navigation.canGoForward} onClick={() => navigateHistory(1)}><ArrowRight aria-hidden="true" /></button>
       </div>
-      <nav aria-label="应用菜单"><button>文件</button><button>编辑</button><button>视图</button><button>帮助</button></nav><div className="window-controls"><button onClick={() => window.desktop?.minimize?.()}>−</button><button onClick={() => window.desktop?.toggleMaximize()}>□</button><button onClick={() => window.desktop?.close?.()}>×</button></div>
+      <nav aria-label="应用菜单"><button>文件</button><button>编辑</button><button>视图</button><button>帮助</button></nav><WindowControls />
     </header>
     <div className="desktop-body"><aside id="workspace-sidebar" className="sidebar" aria-label="侧栏" hidden={!sidebarVisible}>
       <div className="brand-row"><ModePicker mode={state.mode} onChange={mode => update(next => { next.mode = mode; })} /><button className="sidebar-search-toggle" aria-label="搜索" title="搜索会话" aria-expanded={showSearch} aria-controls="sidebar-search" onClick={() => { setShowSearch(value => !value); setSearch(''); }}><Search aria-hidden="true" /></button></div>
@@ -237,17 +259,17 @@ function App() {
       <button className="sidebar-nav" aria-current={page === 'scheduled' ? 'page' : undefined} onClick={() => setPage('scheduled')}><Clock3 aria-hidden="true" /><span>已安排</span></button>
       <button className="sidebar-nav" aria-current={page === 'plugins' ? 'page' : undefined} onClick={() => setPage('plugins')}><Puzzle aria-hidden="true" /><span>插件</span></button>
       <div className="sidebar-scroll">
-        {state.mode === 'code' && <section aria-labelledby="sidebar-projects"><h2 id="sidebar-projects" className="section">项目</h2>
+        <section aria-labelledby="sidebar-projects"><h2 id="sidebar-projects" className="section">项目</h2>
           {state.activeProjectId ? <div className="sidebar-project" title={projectLabel(state.projects.find(project => project.id === state.activeProjectId)?.name ?? state.activeProjectId)}><FolderOpen aria-hidden="true" /><span>{projectLabel(state.projects.find(project => project.id === state.activeProjectId)?.name ?? state.activeProjectId)}</span></div> : <div className="empty">没有项目</div>}
-        </section>}
+        </section>
         <section aria-labelledby="sidebar-recent"><h2 id="sidebar-recent" className="section">最近</h2>
-          {threads.map(thread => <ThreadButton key={thread.id} thread={thread} selected={page === 'chat' && state.activeThreadId === thread.id} onSelect={() => { void selectThread(thread); }} />)}
+          {threads.map(thread => <ThreadButton key={thread.id} thread={thread} selected={page === 'chat' && state.activeThreadId === thread.id} onSelect={() => { void selectThread(thread); }} onTogglePin={() => togglePinned(thread.id)} onArchive={() => { void archiveThreadFromSidebar(thread.id); }} onDelete={() => { void deleteThreadFromSidebar(thread.id); }} />)}
           {threads.length === 0 && <div className="empty">{search ? '没有匹配的会话' : '暂无会话'}</div>}
         </section>
       </div>
     </aside>
-      <main>{!!active?.messages.length && page === 'chat' && <div className="thread-toolbar global-thread-toolbar"><span>{active.title}</span><div><button onClick={renameActive}>重命名</button><button onClick={forkActive}>分叉</button><button onClick={archiveActive}>归档</button><button onClick={deleteActive}>删除</button></div></div>}{page === 'chat' ? <Chat active={active} input={input} setInput={setInput} send={send} cancel={cancel} running={Boolean(runningTurnId)} activity={activity} model={state.model} catalog={catalog} update={update} attachments={attachments} addAttachment={addAttachment} showModel={showModel} setShowModel={setShowModel} showProjects={showProjects} setShowProjects={setShowProjects} toast={toast} projectId={state.activeProjectId} projects={state.projects} status={codexStatus} onForkMessage={forkFromMessage} /> : page === 'plugins' ? <ExtensionsPage connected={codexStatus === 'connected'} /> : <Workspace page={page} state={state} models={availableModels} update={update} toast={toast} providerStatus={providerStatus} />}</main>
-    </div>{notice && <div className="toast">{notice}</div>}{approval && <ApprovalDialog request={approval} onDecision={respondApproval} />}
+      <main>{!!active?.messages.length && page === 'chat' && <div className="thread-toolbar global-thread-toolbar"><span>{active.title}</span><div><button onClick={renameActive}>重命名</button><button onClick={forkActive}>分叉</button><button onClick={archiveActive}>归档</button><button onClick={deleteActive}>删除</button></div></div>}{page === 'chat' ? <Chat mode={state.mode} onOpenPlugins={() => setPage('plugins')} composerPlugins={composerPlugins} setComposerPlugins={setComposerPlugins} active={active} input={input} setInput={setInput} send={send} cancel={cancel} running={Boolean(runningTurnId)} activity={activity} model={state.model} catalog={catalog} update={update} attachments={attachments} addAttachment={addAttachment} showModel={showModel} setShowModel={setShowModel} showProjects={showProjects} setShowProjects={setShowProjects} toast={toast} projectId={state.activeProjectId} projects={state.projects} status={codexStatus} onForkMessage={forkFromMessage} /> : page === 'scheduled' ? <ScheduledPage models={availableModels} loadingModels={catalog.loading} refreshModels={catalog.refresh} /> : page === 'plugins' ? <ExtensionsPage connected={codexStatus === 'connected'} /> : <Workspace page={page} state={state} models={availableModels} update={update} toast={toast} providerStatus={providerStatus} />}</main>
+    </div>{notice && <div className="toast">{notice}</div>}{approval && <ApprovalDialog request={approval} onDecision={respondApproval} />}{deleteCandidate && <DeleteDialog thread={state.threads.find(item => item.id === deleteCandidate)} onCancel={() => setDeleteCandidate(undefined)} onConfirm={() => { const id = deleteCandidate; setDeleteCandidate(undefined); void performDelete(id); }} />}
   </div>;
 }
 
@@ -291,6 +313,17 @@ function MarkdownMessage({ content }: { content: string }) {
   return <div className="markdown-content">{blocks.length ? blocks : <p>{text}</p>}</div>;
 }
 
+function DeleteDialog({ thread, onCancel, onConfirm }: { thread?: DesktopState['threads'][number]; onCancel: () => void; onConfirm: () => void }) {
+  if (!thread) return null;
+  return <div className="confirm-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onCancel(); }}>
+    <section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-description">
+      <div className="confirm-icon" aria-hidden="true">!</div>
+      <div className="confirm-copy"><h2 id="delete-dialog-title">删除会话？</h2><p id="delete-dialog-description">“{thread.title}”将被永久删除，此操作无法撤销。</p></div>
+      <div className="confirm-actions"><button onClick={onCancel}>取消</button><button className="danger" onClick={onConfirm}>删除</button></div>
+    </section>
+  </div>;
+}
+
 function ApprovalDialog({ request, onDecision }: { request: any; onDecision: (decision: string) => void }) {
   const params = request.params || {};
   const isFile = request.method === 'item/fileChange/requestApproval';
@@ -302,8 +335,12 @@ function ApprovalDialog({ request, onDecision }: { request: any; onDecision: (de
   return <div className="approval-backdrop"><section className="approval-dialog"><h2>{title}</h2><p>{reason}</p>{params.command && <pre>{params.command}</pre>}{params.cwd && <small>{params.cwd}</small>}<div className="approval-actions"><button onClick={() => onDecision(isInput ? 'cancel' : 'decline')}>{isInput ? '取消' : '拒绝'}</button><button className="primary" onClick={() => onDecision('accept')}>{isInput ? '提交' : '允许'}</button></div></section></div>;
 }
 
-function Chat({ onForkMessage, catalog, active, input, setInput, send, cancel, running, activity, model, update, attachments, addAttachment, showModel, setShowModel, showProjects, setShowProjects, toast, projectId, projects, status }: { onForkMessage: (messageId: string) => Promise<void>; catalog: ReturnType<typeof useModelCatalog>; active: DesktopState['threads'][number] | undefined; input: string; setInput: (value: string) => void; send: () => void; cancel: () => void; running: boolean; activity?: string; model: string; update: (fn: (next: DesktopState) => void) => void; attachments: string[]; addAttachment: () => void; showModel: boolean; setShowModel: (value: boolean) => void; showProjects: boolean; setShowProjects: (value: boolean) => void; toast: (text: string) => void; projectId?: string; projects: DesktopState['projects']; status: string }) {
+function Chat({ mode, onOpenPlugins, composerPlugins, setComposerPlugins, onForkMessage, catalog, active, input, setInput, send, cancel, running, activity, model, update, attachments, addAttachment, showModel, setShowModel, showProjects, setShowProjects, toast, projectId, projects, status }: { mode: DesktopState['mode']; onOpenPlugins: () => void; composerPlugins: Plugin[]; setComposerPlugins: (plugins: Plugin[]) => void; onForkMessage: (messageId: string) => Promise<void>; catalog: ReturnType<typeof useModelCatalog>; active: DesktopState['threads'][number] | undefined; input: string; setInput: (value: string) => void; send: () => void; cancel: () => void; running: boolean; activity?: string; model: string; update: (fn: (next: DesktopState) => void) => void; attachments: string[]; addAttachment: () => void; showModel: boolean; setShowModel: (value: boolean) => void; showProjects: boolean; setShowProjects: (value: boolean) => void; toast: (text: string) => void; projectId?: string; projects: DesktopState['projects']; status: string }) {
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const threadView = useRef<HTMLDivElement>(null);
+  const followLatest = useRef(true);
+  const composing = useRef(false);
+  const canSend = Boolean(input.trim()) && !running && status === 'connected' && !catalog.loading && catalog.models.includes(model);
   const [workingDirectory, setWorkingDirectory] = useState<string>();
   useEffect(() => {
     let disposed = false;
@@ -315,16 +352,36 @@ function Chat({ onForkMessage, catalog, active, input, setInput, send, cancel, r
   const project = projects.find(item => item.id === projectId);
   const projectPath = workingDirectory || project?.path;
   const projectName = projectLabel(projectPath || project?.name || projectId);
+  const workMode = mode === 'work';
+  const empty = !active?.messages.length;
+  const messageRevision = active?.messages.map(message => `${message.id}:${message.content.length}:${message.role}`).join('|') || '';
+  useEffect(() => {
+    const element = threadView.current;
+    if (!element) return;
+    followLatest.current = true;
+    element.scrollTop = element.scrollHeight;
+    const updateFollowState = () => {
+      followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight < 120;
+    };
+    element.addEventListener('scroll', updateFollowState, { passive: true });
+    updateFollowState();
+    return () => element.removeEventListener('scroll', updateFollowState);
+  }, [active?.id]);
+  useEffect(() => {
+    const element = threadView.current;
+    if (!element || !messageRevision && !activity) return;
+    if (followLatest.current) element.scrollTo({ top: element.scrollHeight, behavior: 'auto' });
+  }, [messageRevision, activity]);
   const suggestions = [
     { text: '探索并理解代码', icon: Telescope, color: 'explore' },
     { text: '构建新功能、应用或工具', icon: Hammer, color: 'build' },
     { text: '审查代码并提出修改建议', icon: RefreshCcw, color: 'review' },
     { text: '修复问题和失败', icon: Bug, color: 'fix' },
   ];
-  return <div className="chat-layout">{active?.messages.length ? <div className="thread-view">{groupMessages(active.messages).map(group => {
+  return <div className={`chat-layout${workMode ? ' work-mode' : ''}${workMode && empty ? ' work-new-chat' : ''}`}>{active?.messages.length ? <div className="thread-view" ref={threadView}>{groupMessages(active.messages).map(group => {
     const message = group[0];
     return message.tool ? <ToolActivityGroup key={message.id} messages={group} /> : <div className={`message ${message.role}`} key={message.id}>{message.role === 'assistant' ? <><MarkdownMessage content={message.content} />{isFinalReply(active.messages, active.messages.indexOf(message)) && <MessageActions content={message.content} disabled={running || active.status === 'running' || status !== 'connected' || !active.remoteId} onFork={() => onForkMessage(message.id)} onError={toast} />}</> : <div className="user-text">{message.content}</div>}</div>;
-  })}{activity && <div className="activity">{activity}</div>}</div> : <div className="welcome">
+  })}{activity && <div className={`activity${activity === '正在思考…' ? ' thinking' : ''}`}>{activity}</div>}</div> : !workMode && <div className="welcome">
     <div className="welcome-content">
       <div className="welcome-mark" role="img" aria-label="Felix" title="Felix" tabIndex={0}><Badge className="welcome-badge" aria-hidden="true" /><Terminal className="welcome-terminal" aria-hidden="true" /></div>
       <h1>{projectName ? <>你想让我们在 <span title={projectPath}>{projectName}</span> 中构建什么？</> : '你想让我们构建什么？'}</h1>
@@ -332,18 +389,29 @@ function Chat({ onForkMessage, catalog, active, input, setInput, send, cancel, r
     </div>
   </div>}
   <div className="composer-dock">
+    {workMode && empty && <h1 className="work-welcome-heading">我们要做什么？</h1>}
     <div className="project-strip">
       <button className="project" aria-expanded={showProjects} title={projectPath || projectName || '选择项目'} onClick={() => setShowProjects(!showProjects)}><FolderOpen aria-hidden="true" /><span>{projectName || '选择项目'}</span></button>
-      <span className="project-context"><Laptop aria-hidden="true" />{project?.environment === 'worktree' ? '工作树' : '本地'}</span>
-      {project?.git?.branch && <span className="project-context project-branch" title={project.git.branch}><GitBranch aria-hidden="true" /><span>{project.git.branch}</span></span>}
+      {workMode ? <><ComposerPlugins connected={status === 'connected'} onBrowse={onOpenPlugins} onSelect={plugin => {
+        if (!composerPlugins.some(item => item.id === plugin.id)) setComposerPlugins([...composerPlugins, plugin]);
+        textarea.current?.focus();
+      }} /><span className="work-environment" title={project?.environment === 'worktree' ? '工作树' : '本地'} aria-label={project?.environment === 'worktree' ? '工作树' : '本地'}><Laptop aria-hidden="true" /></span></> : <><span className="project-context"><Laptop aria-hidden="true" />{project?.environment === 'worktree' ? '工作树' : '本地'}</span>
+      {project?.git?.branch && <span className="project-context project-branch" title={project.git.branch}><GitBranch aria-hidden="true" /><span>{project.git.branch}</span></span>}</>}
       {showProjects && <div className="floating-menu project-menu">{(projects.length ? projects : [{ id: workingDirectory || 'my-agent-plantform', name: projectName || 'my-agent-plantform' }]).map(item => <button key={item.id} onClick={() => { update(next => { next.activeProjectId = item.id; }); setShowProjects(false); }}>{projectLabel(item.name)}</button>)}</div>}
     </div>
     <div className="composer">
-      {attachments.length > 0 && <div className="attachment-list">{attachments.map(name => <span key={name}>{name}</span>)}</div>}
-      <textarea ref={textarea} aria-label="消息" value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') send(); }} placeholder={status === 'connected' ? '随心输入' : '等待 Codex app-server…'} />
+      {composerPlugins.length > 0 && <div className="composer-plugin-chips" aria-label="本次使用的插件">{composerPlugins.map(plugin => <span key={plugin.id}><ExtensionIcon item={plugin} /><span>{extensionName(plugin)}</span><button aria-label={`移除 ${extensionName(plugin)}`} onClick={() => setComposerPlugins(composerPlugins.filter(item => item.id !== plugin.id))}><X /></button></span>)}</div>}
+      {attachments.length > 0 && <div className="attachment-list">{attachments.map(name => <span key={name} title={name}>{name.replace(/^.*[\\/]/, '')}</span>)}</div>}
+      <textarea ref={textarea} aria-label="消息" value={input} onChange={event => setInput(event.target.value)}
+        onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
+        onKeyDown={event => {
+          if (event.key !== 'Enter' || event.shiftKey || event.altKey || composing.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+          event.preventDefault();
+          if (!event.repeat && canSend) send();
+        }} placeholder={status === 'connected' ? '随心输入' : '等待 Codex app-server…'} />
       <div className="composer-footer">
         <div className="composer-left"><button className="icon-button" onClick={addAttachment} title="添加附件" aria-label="添加附件"><Plus aria-hidden="true" /></button><span className="permission-status" title="执行操作时按需请求审批"><ShieldAlert aria-hidden="true" />按需审批</span><span className="connection-status" role="status" title={status === 'connected' ? '已连接' : status} aria-label={status === 'connected' ? '已连接' : status}><i className={`status-dot ${status}`} /></span></div>
-        <div className="composer-right"><ModelPicker catalog={catalog} selected={model} open={showModel} setOpen={setShowModel} onSelect={id => update(next => { next.model = id; })} /><button className="send" title={running ? '停止生成' : '发送'} aria-label={running ? '停止生成' : '发送'} disabled={!running && (!input.trim() || status !== 'connected' || catalog.loading || !catalog.models.includes(model))} onClick={running ? cancel : send}>{running ? <Square aria-hidden="true" /> : <ArrowUp aria-hidden="true" />}</button></div>
+        <div className="composer-right"><ModelPicker catalog={catalog} selected={model} open={showModel} setOpen={setShowModel} onSelect={id => update(next => { next.model = id; })} /><button className="send" title={running ? '停止生成' : '发送（Enter），Shift+Enter 换行'} aria-label={running ? '停止生成' : '发送'} disabled={!running && !canSend} onClick={running ? cancel : send}>{running ? <Square aria-hidden="true" /> : <ArrowUp aria-hidden="true" />}</button></div>
       </div>
     </div>
   </div></div>;
@@ -352,8 +420,8 @@ function Chat({ onForkMessage, catalog, active, input, setInput, send, cancel, r
 function Workspace({ page, state, models, update, toast, providerStatus }: { page: Page; state: DesktopState; models: string[]; update: (fn: (next: DesktopState) => void) => void; toast: (text: string) => void; providerStatus?: any }) {
   const title = page === 'scheduled' ? '已安排' : page === 'plugins' ? '插件' : '设置';
   const providerCard = page === 'settings' ? <div className="page-card provider-card"><b>LLM Provider</b><small>MiniMax 中国服务 · {providerStatus?.endpoint || 'https://api.minimaxi.com/v1'}</small><span className={providerStatus?.keyConfigured ? 'provider-ok' : 'provider-missing'}>{providerStatus?.keyConfigured ? 'API Key 已注入当前进程' : '未检测到 API Key（仅当前副本进程生效）'}</span></div> : null;
-return <section className="page"><h1>{title}</h1><p>{page === 'settings' ? '管理 Codex Desktop 的显示与工作区偏好' : '本地工作区演示页面，已准备好接入对应 connector。'}</p>{page === 'scheduled' && <><div className="page-card"><b>每日工作区检查</b><small>每天 09:00 · 当前项目 · 运行中</small><button onClick={() => toast('任务已暂停（演示）')}>暂停</button></div><div className="page-card"><b>创建新的自动化</b><small>让 Codex 定时检查代码、生成报告或提醒你。</small><button onClick={() => toast('创建任务（演示）')}>创建任务</button></div></>}{page === 'settings' && <><label className="setting-row">主题<select value={state.theme} onChange={event => update(next => { next.theme = event.target.value as DesktopState['theme']; })}><option value="light">浅色</option><option value="dark">深色</option></select></label><label className="setting-row">默认模型<select value={state.model} onChange={event => update(next => { next.model = event.target.value; })}>{models.map(model => <option key={model} value={model}>{model}</option>)}</select></label><label className="setting-row">默认项目<select value={state.activeProjectId ?? ''} onChange={event => update(next => { next.activeProjectId = event.target.value || undefined; })}><option value="">未选择项目</option><option value="my-agent-plantform">my-agent-plantform</option></select></label></>}</section>;
+return <section className="page"><h1>{title}</h1><p>{page === 'settings' ? '管理 Codex Desktop 的显示与工作区偏好' : '本地工作区演示页面，已准备好接入对应 connector。'}</p>{page === 'settings' && <><label className="setting-row">主题<select value={state.theme} onChange={event => update(next => { next.theme = event.target.value as DesktopState['theme']; })}><option value="light">浅色</option><option value="dark">深色</option></select></label><label className="setting-row">默认模型<select value={state.model} onChange={event => update(next => { next.model = event.target.value; })}>{models.map(model => <option key={model} value={model}>{model}</option>)}</select></label><label className="setting-row">默认项目<select value={state.activeProjectId ?? ''} onChange={event => update(next => { next.activeProjectId = event.target.value || undefined; })}><option value="">未选择项目</option><option value="my-agent-plantform">my-agent-plantform</option></select></label></>}</section>;
 }
 
-declare global { interface Window { desktop?: { toggleMaximize: () => Promise<void>; minimize?: () => Promise<void>; close?: () => Promise<void>; providerStatus?: () => Promise<any>; listModels?: () => Promise<any>; getProjectRoot?: () => Promise<string>; readExtensionFile?: (path: string, kind: 'image' | 'skill') => Promise<any> }; codex?: any } }
-createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>);
+  declare global { interface Window { desktop?: WindowFrameBridge & { toggleMaximize: () => Promise<{ maximized?: boolean }>; minimize?: () => Promise<void>; close?: () => Promise<void>; providerStatus?: () => Promise<any>; listModels?: () => Promise<any>; getProjectRoot?: () => Promise<string>; pickFiles?: () => Promise<string[]>; readExtensionFile?: (path: string, kind: 'image' | 'skill') => Promise<any>; listTasks?: () => Promise<any>; saveTask?: (input: any) => Promise<any>; setTaskStatus?: (id: string, status: string) => Promise<any>; runTask?: (id: string) => Promise<any>; cancelTask?: (id: string) => Promise<any>; deleteTask?: (id: string) => Promise<any>; taskDetail?: (id: string) => Promise<any>; onTasksChanged?: (listener: (message?: { error?: string }) => void) => () => void }; codex?: any } }
+createRoot(document.getElementById('root')!).render(<StrictMode><WindowFrame><App /></WindowFrame></StrictMode>);

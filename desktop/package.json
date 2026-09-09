@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
+    "cron-parser": "5.4.0",
     "electron": "latest",
     "react": "latest",
     "react-dom": "latest",

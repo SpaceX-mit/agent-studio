@@ -1,0 +1,17 @@
+.desktop-titlebar { padding-right:0; background:#f7f7f7; }
+.desktop-titlebar .window-controls { align-self:stretch; flex-shrink:0; display:flex; gap:0; margin-left:auto; }
+.desktop-titlebar .window-controls button {
+  display:grid; place-items:center; width:46px; height:100%; padding:0;
+  border:0; border-radius:0; background:transparent; color:#242424;
+  cursor:default; -webkit-app-region:no-drag;
+}
+.desktop-titlebar .window-controls svg { width:12px; height:12px; fill:none; stroke:currentColor; stroke-width:1.2; }
+.desktop-titlebar .window-controls button:hover { background:#e1e1e1; }
+.desktop-titlebar .window-controls button:active { background:#cdcdcd; }
+.desktop-titlebar .window-controls button:focus-visible { outline:2px solid #73777c; outline-offset:-3px; }
+.dark .desktop-titlebar .window-controls button { color:#ededed; }
+.dark .desktop-titlebar .window-controls button:hover { background:#454545; }
+.dark .desktop-titlebar .window-controls button:active { background:#555; }
+.desktop-titlebar .window-controls .window-close:hover { background:#e81123; color:#fff; }
+.desktop-titlebar .window-controls .window-close:active { background:#c50f1f; color:#fff; }
+.desktop-titlebar .window-controls .window-close:hover:focus-visible { outline-color:#fff; }
